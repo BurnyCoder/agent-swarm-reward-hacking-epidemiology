@@ -38,6 +38,8 @@ MISSING = _Missing()
 
 class _SafeDict(dict):
     def __missing__(self, key):  # str.format's [key] lookup lands here for absent keys
+        if isinstance(key, int) and str(key) in self:  # format turns "[0]" into int 0; JSON keys are strings
+            return self[str(key)]
         return MISSING
 
 
