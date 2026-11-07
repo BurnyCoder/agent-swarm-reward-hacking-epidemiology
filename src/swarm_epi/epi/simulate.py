@@ -17,12 +17,14 @@ import numpy as np  # numerics
 
 
 def simulate(N: int, K: int, T: int, n_seeds: int, infect: Callable[[np.ndarray], np.ndarray], recover: float,
-             pi: float, rng: np.random.Generator, seed_last_round: int | None = None) -> np.ndarray:
-    """One run; returns infected counts among the N agents for rounds 0..T."""
+             pi: float, rng: np.random.Generator, seed_last_round: int | None = None,
+             cumulative: bool = False) -> np.ndarray:
+    """One run; returns infected counts (or, if `cumulative`, ever-infected counts) among N agents for rounds 0..T."""
     infected = rng.random(N) < infect(np.zeros(N))  # round 0 (empty board): background infections only
+    ever = infected.copy()  # agents infected at least once
     pro = infected & (rng.random(N) < pi)  # which agents' round-0 posts are pro-hack
     seeds_active = n_seeds > 0 and (seed_last_round is None or seed_last_round >= 0)  # seeds post in round 0
-    out = [int(infected.sum())]  # prevalence trajectory
+    out = [int(ever.sum() if cumulative else infected.sum())]  # trajectory
     for t in range(1, T + 1):
         posts_pro = np.concatenate([pro, np.ones(n_seeds if seeds_active else 0, bool)])  # agents then seed slots
         n_posts = posts_pro.size  # readable posts this round (minus own)
@@ -34,9 +36,10 @@ def simulate(N: int, K: int, T: int, n_seeds: int, infect: Callable[[np.ndarray]
         new_inf = (~infected) & (rng.random(N) < infect(k))  # infections among susceptibles
         stay = infected & (rng.random(N) >= recover)  # infected who do not recover
         infected = new_inf | stay  # SIS update
+        ever |= infected  # cumulative incidence
         pro = infected & (rng.random(N) < pi)  # posts written this round
         seeds_active = n_seeds > 0 and (seed_last_round is None or t <= seed_last_round)  # seed posts this round
-        out.append(int(infected.sum()))
+        out.append(int(ever.sum() if cumulative else infected.sum()))
     return np.array(out)
 
 

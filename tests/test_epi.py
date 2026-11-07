@@ -85,3 +85,11 @@ def test_stats_bootstrap_permutation_and_tost():
     assert np.allclose(stats.holm([0.01, 0.04, 0.03]), [0.03, 0.06, 0.06])  # Holm 1979: 3*.01, 2*.03, max(1*.04, .06)
     ens, y = rng.normal(0, 1, 5000), 0.0
     assert abs(stats.crps_ensemble(ens, y) - 0.2337) < 0.02  # CRPS of N(0,1) at 0 = (sqrt(2)-1)/sqrt(pi)
+
+
+def test_power_and_identifiability_run_and_are_sane():
+    from swarm_epi.epi import power
+    kern = lambda k: 1 - 0.95 * 0.7 ** np.asarray(k)
+    assert power.h1_power(kern, eps=0.05, recover=0.2, pi=0.8, n_runs=10, batches=20) > 0.8
+    ident = power.curve_identifiability(kern, recover=0.0, pi=0.8, n_runs=10, batches=4)
+    assert set(ident) == {"contagion_correct", "broadcast_correct"}
