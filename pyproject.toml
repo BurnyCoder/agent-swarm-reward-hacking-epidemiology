@@ -1,0 +1,38 @@
+[project]
+name = "swarm-epi"
+version = "0.1.0"
+description = "Epidemiology of a reward-hacking belief spreading through a swarm of local-LLM agents sharing a message board"
+readme = "README.md"
+authors = [
+    { name = "BurnyCoder", email = "happymancz@email.cz" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface-hub>=2.4.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "openai>=3.46.0",
+    "pandas>=3.1.1",
+    "plotly>=7.1.0",
+    "pyarrow>=26.0.1",
+    "python-dotenv>=1.2.4",
+    "scipy>=1.18.1",
+    "statsmodels>=0.15.0",
+    "trackio>=0.45.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120

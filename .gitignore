@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv
+.venv-*/
+
+# Secrets and local config (never push credentials)
+.env
+
+# Raw run logs live on the WSL disk / HF dataset, not in git
+runs/
+logs/
+*.jsonl.gz
+trackio_data/
