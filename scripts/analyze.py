@@ -18,8 +18,10 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--runs", type=Path, default=RuntimeConfig().runs_dir, help="raw runs root")
     ap.add_argument("--batch", default="batch1", help="batch sub-directory")
-    ap.add_argument("--results", type=Path, default=Path("results"), help="output directory (git-tracked)")
+    ap.add_argument("--results", type=Path, default=None,
+                    help="output dir (default results/ for batch1, else results/<batch>/)")
     args = ap.parse_args()
+    args.results = args.results or (Path("results") if args.batch == "batch1" else Path("results") / args.batch)
     summary = analysis.run_all(args.runs / args.batch, args.runs / "assay" / "assay.jsonl",
                                args.results / "post_labels.json", args.results)
     print(json.dumps({k: summary.get(k) for k in ("n_runs", "holm")}, indent=1, default=float))  # headline only

@@ -10,8 +10,9 @@ Phases, in pre-registered order:
   harvest     assay pools + PLACEBO note snapshots from pilot    -> data/assay_pools.json
   assay       randomized dose-response assay                     -> $RUNS_DIR/assay/assay.jsonl
   batch1      MAIN x20, PLACEBO x20, TRANSIENT x15 swarms        -> $RUNS_DIR/batch1/
+  explore     EXPLORATORY MAIN/PLACEBO/TRANSIENT x n (default 8)  -> $RUNS_DIR/explore/ (not confirmatory)
   power       simulation power + identifiability (no LLM)     -> data/power.json
-  judge       label every post (batch1 board, seed pools, assay)  -> results/post_labels.json
+  judge       label every post (--batch board, seed pools, assay) -> results/[<batch>/]post_labels.json
 Each phase is resumable: re-running skips finished work.
 """
 
@@ -67,7 +68,12 @@ async def main(args: argparse.Namespace) -> None:
     sandbox = Sandbox(rt.sandbox, rt.sandbox_concurrency, rt.exec_timeout_s)  # isolation backend
     DATA.mkdir(exist_ok=True)
     all_tasks = load_tasks()  # 919 impossible MBPP tasks after prereg filter steps 1-4
-    cap = DATA / "capability.json"
+    cap, part = DATA / "capability.json", DATA / "capability.partial.jsonl"
+    if not cap.exists() and args.partial_capability and part.exists():  # exploratory: tasks checked so far
+        rows = [json.loads(x) for x in part.read_text(encoding="utf-8").splitlines() if x]
+        cap = DATA / "capability_snapshot.json"  # frozen counts of the tasks finished when the snapshot was taken
+        if not cap.exists():  # keep the first snapshot fixed for the whole exploratory batch
+            cap.write_text(json.dumps({r["key"]: r["value"] for r in rows}, indent=1), encoding="utf-8")
     tasks, thr = apply_capability_filter(all_tasks, cap) if cap.exists() else (all_tasks, None)  # prereg filter
     log.info("phase=%s tasks=%d/%d (capability threshold=%s) runs_dir=%s", args.phase, len(tasks), len(all_tasks),
              thr, runs)
@@ -88,7 +94,8 @@ async def main(args: argparse.Namespace) -> None:
         else:
             await pilot.build_pools(llm, sandbox, tasks, DATA / "pools.json", n=args.n or 300)
     elif args.phase == "calibrate":
-        res = await pilot.calibrate(llm, sandbox, tasks, read_json("pools.json"), runs / "calibration", n=args.n or 100)
+        res = await pilot.calibrate(llm, sandbox, tasks, read_json("pools.json"), runs / "calibration", n=args.n or 100,
+                                    early_stop=args.early_stop)
         (DATA / "calibration.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
     elif args.phase == "pilot":
         await run_many(conditions.pilot(variant), llm, sandbox, tasks, read_json("pools.json"), runs / "pilot",
@@ -107,6 +114,9 @@ async def main(args: argparse.Namespace) -> None:
     elif args.phase == "batch1":
         await run_many(conditions.batch1(variant), llm, sandbox, tasks, read_json("pools.json"), runs / "batch1",
                        args.parallel)
+    elif args.phase == "explore":  # exploratory batch before Stage 2 (deviations.md #13)
+        await run_many(conditions.explore(variant, args.n or 8), llm, sandbox, tasks, read_json("pools.json"),
+                       runs / "explore", args.parallel)
     elif args.phase == "power":  # prereg §8.6 with pilot constants
         from swarm_epi.epi import power
         calib, sim = read_json("calibration.json"), read_json("sim_params.json")
@@ -122,7 +132,7 @@ async def main(args: argparse.Namespace) -> None:
         for item in read_json("pools.json")["hack"] + read_json("pools.json")["placebo"]:
             labels[f"pool:{item['pool_id']}"] = {k: item[k] for k in ("p_pro", "p_anti", "p_neutral", "label")}
         todo = {}  # unlabeled texts
-        for d in sorted(p for p in (runs / "batch1").iterdir() if (p / "board.jsonl").exists()):
+        for d in sorted(p for p in (runs / args.batch).iterdir() if (p / "board.jsonl").exists()):
             for line in (d / "board.jsonl").read_text(encoding="utf-8").splitlines():
                 post = json.loads(line)
                 if not post["is_seed"]:
@@ -133,8 +143,8 @@ async def main(args: argparse.Namespace) -> None:
                 row = json.loads(line)
                 todo[f"assay:{row['trial_id']}"] = row["post_text"]
         labels |= await judge_many(llm, todo)
-        out = Path("results") / "post_labels.json"
-        out.parent.mkdir(exist_ok=True)
+        out = Path("results") / ("" if args.batch == "batch1" else args.batch) / "post_labels.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(labels, indent=0), encoding="utf-8")
     log.info("phase %s finished; generated tokens: %d", args.phase, llm.tokens_out)
 
@@ -142,8 +152,12 @@ async def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("phase", choices=["smoke", "capability", "pools", "calibrate", "pilot", "harvest", "assay",
-                                      "batch1", "power", "judge"])
+                                      "batch1", "explore", "power", "judge"])
     ap.add_argument("--parallel", type=int, default=4, help="concurrent swarm replicates")
     ap.add_argument("--n", type=int, default=None, help="override trial/pool counts (pilot use)")
     ap.add_argument("--quiet", action="store_true", help="do not echo every LLM call to the terminal")
+    ap.add_argument("--batch", default="batch1", help="run sub-directory the judge phase labels")
+    ap.add_argument("--early-stop", action="store_true", help="calibration: stop at the first qualifying variant")
+    ap.add_argument("--partial-capability", action="store_true",
+                    help="filter tasks with the capability counts finished so far (exploratory runs only)")
     asyncio.run(main(ap.parse_args()))
