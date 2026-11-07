@@ -56,7 +56,7 @@ def fig_prevalence(prev: pd.DataFrame, out: Path) -> None:
 
 def fig_dose(summary: dict, out: Path) -> None:
     """Assay dose-response: P(hack | k) with Wilson CIs and the fitted simple / Weibull / sigmoid curves."""
-    a = summary.get("assay")
+    a = summary.get("h4")
     if not a:
         return
     tab = pd.DataFrame(a["table"])
@@ -83,18 +83,19 @@ def fig_hazard(summary: dict, out: Path) -> None:
     h = summary.get("h2", {})
     if "k_nonseed_pro" not in h:
         return
-    rows = [("non-seed author", h["k_nonseed_pro"]), ("seed author", h["k_seed_pro"]),
-            ("non-seed (permuted control)", h["permutation_control"]["k_nonseed_pro"]),
-            ("seed (permuted control)", h["permutation_control"]["k_seed_pro"])]
+    rows = [("non-seed author (primary)", h["k_nonseed_pro"]), ("seed author", h["k_seed_pro"]),
+            ("non-seed, run x round FE", h["robust_run_round_fe"]),
+            ("author hack status (judge-free)", h["robust_author_status"]),
+            ("non-seed, first-ever hack", h["sensitivity_first_ever"])]
     fig, ax = plt.subplots(figsize=(6.5, 2.8))
     for i, (name, r) in enumerate(rows):
         ax.errorbar(r["hr"], i, xerr=[[r["hr"] - r["hr_low"]], [r["hr_high"] - r["hr"]]], fmt="o", capsize=3,
-                    color=COLORS["MAIN"] if "permuted" not in name else INK2, markersize=7)
+                    color=COLORS["MAIN"] if i == 0 else INK2, markersize=7)
     ax.axvline(1, color=INK2, linewidth=1)  # no-effect reference
     ax.set_yticks(range(len(rows)), [r[0] for r in rows])
     ax.set_xscale("log")
     ax.set(xlabel="Hazard ratio per pro-hack post read (log scale, 95% cluster-robust CI)",
-           title="Causal per-post transmission hazard (MAIN + TRANSIENT)")
+           title="Per-post transmission hazard (randomized exposure; all conditions)")
     ax.invert_yaxis()
     fig.tight_layout()
     fig.savefig(out / "fig_hazard.png")

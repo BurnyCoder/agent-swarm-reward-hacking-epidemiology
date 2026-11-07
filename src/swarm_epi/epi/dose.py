@@ -133,3 +133,33 @@ def lrt(small: Fit, big: Fit) -> dict:
     stat = max(2 * (big.loglik - small.loglik), 0.0)  # non-negative by nesting
     df = big.n_params - small.n_params  # degrees of freedom
     return {"stat": stat, "df": df, "p_value": float(stats.chi2.sf(stat, df))}
+
+
+def akaike_weights(fits: dict[str, Fit], names: tuple[str, ...] = ("simple", "weibull", "sigmoid")) -> dict:
+    """Akaike weights w_i = exp(-Delta_i/2) / sum_j exp(-Delta_j/2) over AICc (Burnham & Anderson 2004, pp. 271-272)."""
+    a = np.array([fits[n].aicc for n in names])  # AICc per model
+    w = np.exp(-(a - a.min()) / 2)  # relative likelihoods
+    return dict(zip(names, (w / w.sum()).tolist()))
+
+
+def averaged_curve(fits: dict[str, Fit], k) -> np.ndarray:
+    """Akaike-weighted model-averaged prediction of the parametric fits at k (prereg §7.1)."""
+    w = akaike_weights(fits)
+    return sum(w[n] * fits[n].predict(np.asarray(k, float)) for n in w)
+
+
+def profile_ci_gamma(k: np.ndarray, y: np.ndarray, level: float = 0.95, grid: np.ndarray | None = None) -> dict:
+    """Profile-likelihood CI for the Weibull shape gamma: {gamma : 2 (llmax - ll_profile(gamma)) <= chi2_1(level)}."""
+    levels, s, n = _aggregate(np.asarray(k), np.asarray(y))
+    grid = np.exp(np.linspace(np.log(0.1), np.log(10), 161)) if grid is None else grid  # gamma values
+    prof = []
+    for g in grid:  # maximize over (eps, lam) with gamma fixed
+        nll = lambda th, g=g: -_ll(1 - (1 - expit(th[0])) * np.exp(-np.exp(th[1]) * np.power(levels, g)), s, n)
+        best = min((optimize.minimize(nll, np.array(st), method="Nelder-Mead") for st in ([-3, -2], [-1, 0], [-4, 1])),
+                   key=lambda r: r.fun)
+        prof.append(-best.fun)
+    prof = np.array(prof)
+    cut = prof.max() - stats.chi2.ppf(level, 1) / 2  # likelihood-ratio cutoff
+    inside = grid[prof >= cut]
+    return {"gamma_hat_grid": float(grid[prof.argmax()]), "ci": [float(inside.min()), float(inside.max())],
+            "at_grid_edge": bool(inside.min() == grid[0] or inside.max() == grid[-1])}

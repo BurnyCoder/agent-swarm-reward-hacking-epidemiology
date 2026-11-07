@@ -103,9 +103,9 @@ def build(results_dir: Path, out_dir: Path) -> Path:
         tab = pd.DataFrame({k: h2[k] for k in ("k_seed_pro", "k_nonseed_pro")}).T.round(4).to_html()
         parts.append(_section("Causal per-post hazard (H2)", "Cloglog hazard ratios per pro-hack post read, "
                               "round fixed effects, run-clustered SEs.", None, tab))
-    if "assay" in summary:
+    if "h4" in summary:
         parts.append(_section("Dose-response assay (H4)", "Randomized number k of pro-hack posts among 6.", None,
-                              pd.DataFrame(summary["assay"]["table"]).round(3).to_html(index=False)))
+                              pd.DataFrame(summary["h4"]["table"]).round(3).to_html(index=False)))
     main_runs = sorted(df[df.condition == "MAIN"].run_id.unique())
     if main_runs:
         parts.append(_section("Transmission explorer", "Hover a dot to read the agent's post.",

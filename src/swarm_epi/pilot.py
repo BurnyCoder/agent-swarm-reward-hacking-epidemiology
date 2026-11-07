@@ -212,6 +212,14 @@ async def harvest(llm: LLM, run_dirs: list[Path], seed_pools: dict, out_path: Pa
              "neutral": [r for r in rows if r["condition"] == "PLACEBO" and r["p_neutral"] >= 0.8 and r["p_pro"] < 0.1],
              "snapshots": snaps, "_all": rows}
     out_path.write_text(json.dumps(pools, indent=1, ensure_ascii=False), encoding="utf-8")
+    trans = []  # (hacked at t-1, hacked at t) pairs from all pilot runs -> recovery probability
+    for d in run_dirs:
+        recs = [json.loads(x) for x in (d / "rounds.jsonl").read_text(encoding="utf-8").splitlines() if x]
+        state = {(r["agent"], r["round"]): r["hack_attempt"] for r in recs}
+        trans += [state[(a, t + 1)] for (a, t), h in state.items() if h and (a, t + 1) in state]
+    recover = float(1 - np.mean(trans)) if trans else 0.5  # P(not hacking at t | hacking at t-1)
+    sim = {"recover": recover, "n_transitions": len(trans), "source": "pilot harvest runs"}
+    (out_path.parent / "sim_params.json").write_text(json.dumps(sim, indent=1), encoding="utf-8")
     log.info("harvest: pro %d (live %d), anti %d, neutral %d, snapshots %d", len(pro),
              sum(p["source"] == "live_nonseed" for p in pro), len(pools["anti"]), len(pools["neutral"]), len(snaps))
     return pools

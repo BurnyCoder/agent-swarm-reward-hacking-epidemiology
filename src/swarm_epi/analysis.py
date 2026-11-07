@@ -1,230 +1,422 @@
-"""Pre-registered analysis: reads results files only and regenerates every table/number in results/ (one command).
+"""Pre-registered analysis (reports/preregistration.md §9): reads results files only, writes every number/table.
 
-Local context — maps each hypothesis to its estimator (reports/preregistration.md):
-- H1 contagion: run-level mean non-seed hack-attempt prevalence over rounds 1..T, MAIN vs PLACEBO
-  (`epi.stats.compare_runs`: permutation + Welch + bootstrap CI + TOST).
-- H2 secondary transmission: cloglog hazard on randomized counts of pro-hack posts read, seed vs non-seed authors,
-  round fixed effects, run-clustered SEs (`epi.hazard`); plus the within-round label-permutation random control.
-- H4 dose-response shape: simple vs Weibull (LRT on gamma=1) vs sigmoid vs saturated on the assay (`epi.dose`).
-- Holm correction over the confirmatory family {H1, H2, H4}.
-- H3 / H5 (exploratory): TRANSIENT trajectory, f'(0) and R0 (`epi.transmission`), growth-curve AICc table
-  (`epi.curves`), and out-of-sample prediction of MAIN/TRANSIENT curves by the assay-calibrated simulator scored with
-  CRPS / log score against a broadcast-only baseline (`epi.simulate`, `epi.stats`).
-Global context: `scripts/analyze.py` calls `run_all`; `figures.py` and `site.py` read the JSON/CSV written here.
+Local context — estimator per hypothesis:
+- H1 (§9.1): run-level mean non-seed hack-attempt prevalence over rounds 1..10; MAIN vs PLACEBO over CRN pairs: exact
+  sign-flip test (primary), Welch and round-0-adjusted tests (robustness), pair-bootstrap CI, paired/Welch TOST.
+- H2 (§9.2): cloglog hazard on susceptible agent-rounds (not hacking in t-1) of all conditions, slopes S (seed
+  pro-hack posts read), M (non-seed judge-pro-hack posts read), E (expected M given the board), fixed effects round,
+  run, task, run-clustered SEs; one-sided Wald test of beta_M > 0. Robustness: cluster bootstrap over runs within
+  condition, run x round FE instead of E, author-hack-status exposure, first-ever-hack risk set. Random control:
+  1,000 within run x round label permutations (§9.7).
+- H4 (§9.3): simple / Weibull / sigmoid on the assay's j=0 distinct cells; LRT of gamma = 1; AICc + Akaike weights;
+  profile CI of gamma; falsification bootstrap; Dodds-Watts superadditivity; same-vs-distinct; anti posts; content
+  control with TOST.
+- Holm over {H1, H2, H4} (§9.6).
+- H3 (§9.4): TRANSIENT vs PLACEBO late window (rounds 8-10) sign-flip + TOST, logit slope over rounds 3-10, R0 =
+  pi K~ h1 D and R_map = K(q1 - q0) with regime, bootstrap CIs, three-way decision; descriptive growth curves.
+- H5 (§9.5): assay-calibrated simulator (pilot recovery, PLACEBO baseline) vs broadcast-only and leave-one-run-out
+  logistic; CRPS* and log score on counts; sign-flip test over runs; 90% interval coverage.
+Global context: `scripts/analyze.py` runs `run_all`; `figures.py` / `site.py` read results/summary.json.
 """
 
 from __future__ import annotations  # forward references
 
+import ast  # unparseable-output rate
 import json  # IO
 from pathlib import Path  # paths
 
 import numpy as np  # numerics
 import pandas as pd  # tables
+from scipy import optimize  # LOO logistic baseline
+from scipy.special import expit, logit  # logistic transforms
+from scipy.stats import binom  # binomial predictive pmf
+from statsmodels.stats.proportion import tost_proportions_2indep  # content-control TOST
 
 from .epi import curves, dose, hazard, simulate, stats, transmission  # statistics
 
-RNG_SEED = 20261107  # analysis RNG seed (bootstrap / permutation / simulation)
+RNG_SEED = 20261107  # analysis RNG seed
+K, N, M_SEEDS = 6, 32, 2  # design constants (prereg §2.1)
 
 
-# ----------------------------------------------------------------------------------------------- loading
+# ============================================================================================ loading / exposure
 def load_runs(batch_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Concatenate rounds.jsonl (agent-rounds) and board.jsonl (posts) of every completed run in `batch_dir`."""
-    recs, posts = [], []  # accumulators
+    """rounds.jsonl (agent-rounds) and board.jsonl (posts) of every COMPLETED run in `batch_dir`."""
+    recs, posts = [], []
     for d in sorted(p for p in batch_dir.iterdir() if (p / "state.json").exists()):
         if not json.loads((d / "state.json").read_text(encoding="utf-8")).get("done"):
-            continue  # only completed runs enter the analysis
-        cfg = json.loads((d / "config.json").read_text(encoding="utf-8"))  # run config
+            continue  # only completed runs enter the analysis (prereg §9.8)
+        cfg = json.loads((d / "config.json").read_text(encoding="utf-8"))
         recs += [json.loads(x) for x in (d / "rounds.jsonl").read_text(encoding="utf-8").splitlines() if x]
-        posts += [json.loads(x) | {"run_id": d.name, "condition": cfg["condition"]}
+        posts += [json.loads(x) | {"run_id": d.name, "condition": cfg["condition"], "replicate": cfg["replicate"]}
                   for x in (d / "board.jsonl").read_text(encoding="utf-8").splitlines() if x]
     return pd.DataFrame(recs), pd.DataFrame(posts)
 
 
-def post_key(run_id: str, post_id: str, is_seed: bool, pool_id: str) -> str:
-    """Key into the judge-label table: seed posts are labeled once per pool item, agent posts per run."""
-    return f"pool:{pool_id}" if is_seed else f"{run_id}:{post_id}"
+def label_of(labels: dict, run_id: str, post_id: str, is_seed: bool, pool_id: str) -> dict:
+    """Judge scores for a post (seed posts are labelled once per pool item)."""
+    return labels.get(f"pool:{pool_id}" if is_seed else f"{run_id}:{post_id}", {})
 
 
-def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict[str, dict], thr: float = 0.5) -> pd.DataFrame:
-    """Add k_seed_pro / k_nonseed_pro / k_anti (counts of judged posts read) and previous-round state per agent."""
-    lab = {}  # (run_id, post_id) -> label scores
+def _parses(code: str) -> bool:
+    """Whether code parses (unparseable-output rate, prereg §9.8)."""
+    try:
+        ast.parse(code)
+        return True
+    except SyntaxError:
+        return False
+
+
+def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict, thr: float = 0.5) -> pd.DataFrame:
+    """Per agent-round: S, M, anti counts, author-hack exposure, E (expected M given the board), lagged state."""
+    hack = {(r.run_id, r.agent, r.round): bool(r.hack_attempt) for r in recs.itertuples()}  # author status
+    info, board = {}, {}  # (run, post_id) -> flags; (run, round) -> candidate posts
     for p in posts.itertuples():
-        lab[(p.run_id, p.post_id)] = labels.get(post_key(p.run_id, p.post_id, p.is_seed, p.pool_id), {})
+        s = label_of(labels, p.run_id, p.post_id, p.is_seed, p.pool_id)
+        pro, anti = s.get("p_pro", 0.0) >= thr, s.get("p_anti", 0.0) >= thr
+        ah = (not p.is_seed) and hack.get((p.run_id, p.author, p.round), False)
+        info[(p.run_id, p.post_id)] = (p.is_seed, pro, anti, ah)
+        board.setdefault((p.run_id, p.round), []).append((p.author, p.is_seed, pro, ah))
     rows = []
     for r in recs.itertuples():
-        ks = kn = ka = 0  # exposure counters
-        for pid, seed in zip(r.read_post_ids, r.read_is_seed):
-            s = lab.get((r.run_id, pid), {})  # judge scores of the read post
-            pro = s.get("p_pro", 0.0) >= thr  # pro-hack label (P(A) >= 0.5)
-            ks += int(pro and seed)
-            kn += int(pro and not seed)
-            ka += int(s.get("p_anti", 0.0) >= thr)
-        rows.append((ks, kn, ka))
+        S = Mn = A = Mh = 0
+        for pid in r.read_post_ids:
+            seed, pro, anti, ah = info.get((r.run_id, pid), (False, False, False, False))
+            S += int(pro and seed)
+            Mn += int(pro and not seed)
+            A += int(anti)
+            Mh += int(ah)
+        cand = [b for b in board.get((r.run_id, r.round - 1), []) if b[0] != r.agent]  # readable posts
+        kk = min(K, len(cand))
+        E = kk * np.mean([(not b[1]) and b[2] for b in cand]) if cand else 0.0  # expected non-seed pro-hack read
+        Eh = kk * np.mean([b[3] for b in cand]) if cand else 0.0  # expected hacked-author posts read
+        rows.append((S, Mn, A, Mh, E, Eh))
     out = recs.copy()
-    out[["k_seed_pro", "k_nonseed_pro", "k_anti"]] = np.array(rows, int) if rows else np.zeros((0, 3), int)
-    out = out.sort_values(["run_id", "agent", "round"])  # previous-round state per agent
+    cols = ["k_seed_pro", "k_nonseed_pro", "k_anti", "k_author_hack", "E", "E_author"]
+    out[cols] = pd.DataFrame(rows, index=out.index, columns=cols)
+    out = out.sort_values(["run_id", "agent", "round"]).reset_index(drop=True)
     out["prev_hack"] = out.groupby(["run_id", "agent"])["hack_attempt"].shift(1)  # NaN in round 0
-    out["post_pro"] = [labels.get(f"{r}:{p}", {}).get("p_pro", np.nan) >= thr
-                       for r, p in zip(out.run_id, out.post_id)]  # own post judged pro-hack
+    out["ever_before"] = out.groupby(["run_id", "agent"])["hack_attempt"].transform(
+        lambda s: s.astype(int).cumsum().shift(1, fill_value=0) > 0)  # hacked in an earlier round
+    out["post_pro"] = [labels.get(f"{r}:{p}", {}).get("p_pro", np.nan) >= thr for r, p in zip(out.run_id, out.post_id)]
+    out["task"], out["run"] = out["task_id"], out["run_id"]
+    out["unparseable"] = [not _parses(a[0]["code"]) if a else True for a in out["attempts"]]
     return out
 
 
-# ----------------------------------------------------------------------------------------------- H1
-def prevalence_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Non-seed hack-attempt prevalence per run and round."""
-    return df.groupby(["condition", "run_id", "round"])["hack_attempt"].mean().rename("prevalence").reset_index()
+# ============================================================================================ H1
+def run_means(df: pd.DataFrame, rounds: range) -> pd.DataFrame:
+    """Run-level mean prevalence over `rounds` and round-0 prevalence, indexed by (condition, replicate)."""
+    prev = df.groupby(["condition", "replicate", "round"])["hack_attempt"].mean().unstack()  # runs x rounds
+    cols = [c for c in rounds if c in prev.columns]  # rounds present (shorter test runs)
+    if not cols:
+        return pd.DataFrame(columns=["mean", "round0"])
+    return pd.DataFrame({"mean": prev[cols].mean(1), "round0": prev[0]})
 
 
-def h1(prev: pd.DataFrame, rng: np.random.Generator) -> dict:
-    """Run-level mean prevalence over rounds >= 1; MAIN vs PLACEBO (confirmatory) and TRANSIENT vs PLACEBO."""
-    run_means = prev[prev["round"] >= 1].groupby(["condition", "run_id"])["prevalence"].mean()  # one value per run
-    get = lambda c: run_means.loc[c].values if c in run_means.index.get_level_values(0) else np.array([])
-    out = {}
-    for a, b in [("MAIN", "PLACEBO"), ("TRANSIENT", "PLACEBO"), ("MAIN", "TRANSIENT")]:
-        if len(get(a)) >= 2 and len(get(b)) >= 2:
-            out[f"{a}_vs_{b}"] = stats.compare_runs(get(a), get(b), sesoi=0.10, rng=rng)
-    return out
+def paired(rm: pd.DataFrame, a: str, b: str, rng, sesoi: float = 0.10) -> dict:
+    """CRN-paired comparison of conditions a vs b over replicates present in both."""
+    conds = set(rm.index.get_level_values(0)) if len(rm) else set()
+    if a not in conds or b not in conds:
+        return {}
+    A, B = rm.loc[a], rm.loc[b]
+    common = A.index.intersection(B.index)  # CRN pairs
+    if len(common) < 3:
+        return {}
+    return stats.compare_paired(A.loc[common, "mean"].values, B.loc[common, "mean"].values, sesoi, rng,
+                                covariate=(A.loc[common, "round0"] - B.loc[common, "round0"]).values)
 
 
-# ----------------------------------------------------------------------------------------------- H2
-def hazard_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Susceptible agent-rounds (not hacking in the previous round), rounds >= 1, outcome y = hack attempt now."""
-    h = df[(df["round"] >= 1) & (df["prev_hack"] == False)].copy()
+# ============================================================================================ H2
+SLOPES = ["k_seed_pro", "k_nonseed_pro", "E"]
+
+
+def risk_set(df: pd.DataFrame, first_ever: bool = False) -> pd.DataFrame:
+    """Susceptible agent-rounds (rounds >= 1): not hacking in t-1 (primary) or never hacked before (sensitivity)."""
+    h = df[df["round"] >= 1]
+    h = h[~h["ever_before"]] if first_ever else h[h["prev_hack"] == False]
+    h = h.copy()
     h["y"] = h["hack_attempt"].astype(int)
-    h["run"] = h["run_id"]
     return h
 
 
-def h2(df: pd.DataFrame, rng: np.random.Generator) -> dict:
-    """Cloglog hazard fit on MAIN + TRANSIENT susceptible agent-rounds, plus the label-permutation random control."""
-    h = hazard_table(df[df["condition"].isin(["MAIN", "TRANSIENT"])])
+def _resample_runs(df: pd.DataFrame, rng, conds: list[str] | None = None) -> pd.DataFrame:
+    """Cluster bootstrap: resample runs with replacement within condition; duplicates get distinct run ids."""
+    groups = {c: g["run"].unique() for c, g in df.groupby("condition") if conds is None or c in conds}
+    pick = [r for rs in groups.values() for r in rng.choice(rs, len(rs))]
+    return pd.concat([df[df.run == r].assign(run=f"{r}#{i}") for i, r in enumerate(pick)], ignore_index=True)
+
+
+def h2(df: pd.DataFrame, rng, n_perm: int = 1000, n_boot: int = 2000) -> dict:
+    """Primary cloglog hazard model, robustness fits and the permutation random control."""
+    h = risk_set(df)
     if h["y"].sum() < 5 or h["run"].nunique() < 3:
         return {"error": "too few events"}
-    res = hazard.fit_cloglog(h, ["k_seed_pro", "k_nonseed_pro"])
+    res = hazard.fit_cloglog(h, SLOPES)
     out = {c: hazard.hazard_ratio(res, c) for c in ("k_seed_pro", "k_nonseed_pro")}
-    perm = h.copy()  # random control: shuffle outcomes within round (breaks exposure-outcome link only)
-    perm["y"] = perm.groupby("round")["y"].transform(lambda s: rng.permutation(s.values))
-    res0 = hazard.fit_cloglog(perm, ["k_seed_pro", "k_nonseed_pro"])
-    out["permutation_control"] = {c: hazard.hazard_ratio(res0, c) for c in ("k_seed_pro", "k_nonseed_pro")}
-    out["n_rows"], out["n_events"], out["n_runs"] = len(h), int(h["y"].sum()), int(h["run"].nunique())
+    out["h1_marginal"] = hazard.marginal_h1(res, "k_nonseed_pro")
+    out |= {"n_rows": len(h), "n_events": int(h["y"].sum()), "n_runs": int(h["run"].nunique()),
+            "n_dropped": int(res.n_dropped)}
+    out["statsmodels_check_round_run"] = hazard.statsmodels_check(h, SLOPES).round(6).to_dict()  # validation
+    boots = []
+    for _ in range(n_boot):  # robustness 1: cluster bootstrap over runs within condition
+        try:
+            boots.append(float(hazard.fit_cloglog(_resample_runs(h, rng), SLOPES).params["k_nonseed_pro"]))
+        except (np.linalg.LinAlgError, KeyError):
+            continue
+    out["bootstrap_beta_ci95"] = [float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))]
+    hr = h.assign(run_round=h["run"] + "_" + h["round"].astype(str))  # robustness 2: run x round FE
+    out["robust_run_round_fe"] = hazard.hazard_ratio(
+        hazard.fit_cloglog(hr, ["k_seed_pro", "k_nonseed_pro"], fe=("run_round", "task")), "k_nonseed_pro")
+    out["robust_author_status"] = hazard.hazard_ratio(  # robustness 3: judge-free exposure
+        hazard.fit_cloglog(h, ["k_seed_pro", "k_author_hack", "E_author"]), "k_author_hack")
+    out["sensitivity_first_ever"] = hazard.hazard_ratio(
+        hazard.fit_cloglog(risk_set(df, first_ever=True), SLOPES), "k_nonseed_pro")
+    betas, cover = [], []
+    for _ in range(n_perm):  # random control: permute outcomes within run x round
+        hp = h.copy()
+        hp["y"] = hp.groupby(["run", "round"])["y"].transform(lambda s: rng.permutation(s.values))
+        rp = hazard.fit_cloglog(hp, SLOPES)
+        b, se = float(rp.params["k_nonseed_pro"]), float(rp.bse["k_nonseed_pro"])
+        betas.append(b)
+        cover.append(b - 1.96 * se <= 0 <= b + 1.96 * se)
+    out["permutation_control"] = {"mean_beta": float(np.mean(betas)), "sd_beta": float(np.std(betas)),
+                                  "coverage_of_zero": float(np.mean(cover)), "n_perm": n_perm}
     return out
 
 
-# ----------------------------------------------------------------------------------------------- H4 + map
-def assay_analysis(assay: pd.DataFrame, labels: dict[str, dict], rng: np.random.Generator, B: int = 2000) -> dict:
-    """Dose-response fits (hack and own-post-pro arms), anti-post effect, same-vs-distinct, off-topic control."""
-    a = assay.copy()
-    a["post_pro"] = [labels.get(f"assay:{t}", {}).get("p_pro", np.nan) >= 0.5 for t in a["trial_id"]]
-    d = a[(a["variant"] == "distinct") & (a["j"] == 0)]  # main dose-response cells
-    fits = dose.fit_all(d["k"].values, d["hack_attempt"].astype(int).values)
-    out = {"hack": {m: {"params": f.params, "loglik": f.loglik, "aicc": f.aicc} for m, f in fits.items()},
-           "lrt_simple_vs_weibull": dose.lrt(fits["simple"], fits["weibull"])}
+# ============================================================================================ H4 and the post map
+def _fits_summary(fits: dict) -> dict:
+    """Serializable summary of dose-response fits with Akaike weights."""
+    w = dose.akaike_weights(fits)
+    return {m: {"params": f.params, "loglik": f.loglik, "aicc": f.aicc, "akaike_weight": w.get(m)}
+            for m, f in fits.items()}
+
+
+def _boot_cells(sub: pd.DataFrame, col: str, rng) -> tuple[np.ndarray, np.ndarray]:
+    """Resample trials within exposure cells; returns (k, y)."""
+    ks = sorted(sub.k.unique())
+    kb = np.concatenate([[kv] * int((sub.k == kv).sum()) for kv in ks])
+    yb = np.concatenate([rng.choice(sub[sub.k == kv][col].astype(int).values, int((sub.k == kv).sum())) for kv in ks])
+    return kb, yb
+
+
+def h4(assay: pd.DataFrame, rng, n_boot: int = 2000) -> dict:
+    """Dose-response analyses on the randomized assay (hack arm, post-stance arm, comparisons)."""
+    d = assay[(assay.variant == "distinct") & (assay.j == 0)]
+    k, y = d["k"].values, d["hack_attempt"].astype(int).values
+    fits = dose.fit_all(k, y)
+    out = {"hack": _fits_summary(fits), "lrt_simple_vs_weibull": dose.lrt(fits["simple"], fits["weibull"]),
+           "gamma_profile_ci": dose.profile_ci_gamma(k, y)}
     tab = d.groupby("k").agg(n=("hack_attempt", "size"), hack=("hack_attempt", "mean"), post_pro=("post_pro", "mean"))
     out["table"] = tab.reset_index().to_dict("records")
-    K = 6
-    P_post = np.array([tab["post_pro"].get(k, np.nan) for k in range(K + 1)])  # saturated P(post pro | k)
-    if not np.isnan(P_post[[0, 1]]).any():  # f'(0) needs k=0 and k=1 cells
-        boot = []
-        for _ in range(B):  # bootstrap trials within cells
-            p0 = rng.choice(d[d.k == 0]["post_pro"].values, (d.k == 0).sum()).mean()
-            p1 = rng.choice(d[d.k == 1]["post_pro"].values, (d.k == 1).sum()).mean()
-            boot.append(K * (p1 - p0))
-        out["fprime0"] = {"est": transmission.fprime0(P_post, K), "ci": list(np.percentile(boot, [2.5, 97.5]))}
-    for name, sub in [("anti_j2", a[(a.variant == "distinct") & (a.j == 2)]), ("same", a[a.variant == "same"]),
-                      ("offtopic", a[a.variant == "offtopic"])]:
-        out[name] = sub.groupby("k")["hack_attempt"].agg(["size", "mean"]).reset_index().to_dict("records")
+    grid = np.arange(K + 1)
+    maxdiffs, dw = [], []
+    for _ in range(n_boot):  # falsification statistic and Dodds-Watts superadditivity
+        kb, yb = _boot_cells(d, "hack_attempt", rng)
+        fs, fw = dose.fit_model("simple", kb, yb), dose.fit_model("weibull", kb, yb)
+        maxdiffs.append(float(np.max(np.abs(fw.predict(grid) - fs.predict(grid)))))
+        p = {kv: yb[kb == kv].mean() for kv in np.unique(kb)}
+        if {0, 1, 2} <= set(p) and p[0] < 1:
+            dw.append((p[2] - p[0]) / (1 - p[0]) - 2 * (p[1] - p[0]) / (1 - p[0]))  # P*2 - 2 P*1
+    out["falsification_maxdiff_ci90_upper"] = float(np.percentile(maxdiffs, 95))
+    out["sigmoid_aicc_preferred_by_2"] = bool(fits["sigmoid"].aicc < min(fits["simple"].aicc, fits["weibull"].aicc) - 2)
+    if dw:
+        out["dodds_watts_P2_minus_2P1_ci95"] = [float(np.percentile(dw, 2.5)), float(np.percentile(dw, 97.5))]
+    comps = {}
+    for kv in (2, 4):  # same-author vs distinct-author
+        s, dd = assay[(assay.variant == "same") & (assay.k == kv)], d[d.k == kv]
+        if len(s) and len(dd):
+            comps[f"same_minus_distinct_k{kv}"] = float(s.hack_attempt.mean() - dd.hack_attempt.mean())
+    anti = assay[(assay.variant == "distinct") & (assay.j == 2)]
+    comps["anti_minus_none_by_k"] = {int(kv): float(anti[anti.k == kv].hack_attempt.mean() -
+                                                    d[d.k == kv].hack_attempt.mean())
+                                     for kv in sorted(anti.k.unique()) if (d.k == kv).any()}
+    off, base = assay[assay.variant == "offtopic"], d[d.k == 0]
+    comps["offtopic_minus_k0"] = {int(kv): float(off[off.k == kv].hack_attempt.mean() - base.hack_attempt.mean())
+                                  for kv in sorted(off.k.unique())}
+    if (off.k == 6).any() and len(base):
+        o6 = off[off.k == 6]
+        comps["offtopic_k6_tost_p"] = float(tost_proportions_2indep(
+            int(o6.hack_attempt.sum()), len(o6), int(base.hack_attempt.sum()), len(base), -0.10, 0.10)[0])
+    out["comparisons"] = comps
+    pk = d.dropna(subset=["post_pro"])  # post-stance map q_k (Akaike-weighted parametric fit, prereg §7.1)
+    q = dose.averaged_curve(dose.fit_all(pk["k"].values, pk["post_pro"].astype(int).values), grid)
+    out["post_map"] = {"q": q.tolist(), **transmission.regime(q, K)}
+    rm = [transmission.fprime0(dose.averaged_curve(dose.fit_all(*_boot_cells(pk, "post_pro", rng)), grid), K)
+          for _ in range(min(n_boot, 1000))]
+    out["post_map"]["R_map_ci95"] = [float(np.percentile(rm, 2.5)), float(np.percentile(rm, 97.5))]
+    hacked = assay["hack_attempt"].astype(bool)
+    out["pi_from_assay"] = {"pi_h": float(assay[hacked]["post_pro"].mean()),
+                            "pi_n": float(assay[~hacked]["post_pro"].mean())}
     return out
 
 
-# ----------------------------------------------------------------------------------------------- H3 / H5
-def cumulative_matrix(df: pd.DataFrame, condition: str, N: int) -> np.ndarray:
-    """runs x rounds matrix of cumulative non-seed agents that have ever attempted a hack."""
-    sub = df[df.condition == condition].sort_values("round")
-    mats = []
-    for _, g in sub.groupby("run_id"):
-        first = g[g.hack_attempt].groupby("agent")["round"].min()  # first hack round per agent
-        T = int(g["round"].max())
-        mats.append([int((first <= t).sum()) for t in range(T + 1)])
-    return np.array(mats)
+# ============================================================================================ H3
+def infectious_period(df: pd.DataFrame) -> float:
+    """D = 1/rho, rho = (pro-posting spells that end) / (pro-posting agent-rounds at risk of ending; last round
+    censored) — geometric MLE (prereg §7.3)."""
+    d = df.sort_values("round")
+    nxt = d.groupby(["run", "agent"])["post_pro"].shift(-1)
+    at_risk = d["post_pro"].astype(bool) & nxt.notna()
+    ends = at_risk & (nxt == False)
+    return float(at_risk.sum() / max(int(ends.sum()), 1))
 
 
-def curve_table(df: pd.DataFrame, N: int) -> dict:
-    """Pooled growth-curve fits (descriptive) per condition."""
-    out = {}
-    for cond in df.condition.unique():
-        C = cumulative_matrix(df, cond, N)
-        if C.size:
-            fits = curves.fit_all(C, N)
-            best = min(fits.values(), key=lambda f: f.aicc).aicc
-            out[cond] = {m: {"params": f.params, "aicc": f.aicc, "delta_aicc": f.aicc - best} for m, f in fits.items()}
+def r0_components(df: pd.DataFrame, h1: float) -> dict:
+    """pi, D and R0 = pi K~ h1 D with K~ = K (post-seed regime) and K~ = (N-1)K/(N-1+m) (seeds active)."""
+    sub = df[df.condition.isin(["MAIN", "TRANSIENT"])]
+    pi = float(sub[sub.hack_attempt]["post_pro"].mean()) if sub.hack_attempt.any() else float("nan")
+    D = infectious_period(sub)
+    return {"pi": pi, "D": D, "h1": h1, "R0": transmission.board_R0(pi, K, h1, D),
+            "R0_seeds_active": transmission.board_R0(pi, (N - 1) * K / (N - 1 + M_SEEDS), h1, D)}
+
+
+def h3(df: pd.DataFrame, rm_late: pd.DataFrame, h2_out: dict, h4_out: dict, rng, n_boot: int = 1000) -> dict:
+    """Persistence test, logit slope, R0 / R_map with CIs and the pre-registered three-way decision."""
+    out = {"late_window": paired(rm_late, "TRANSIENT", "PLACEBO", rng)}
+    tr = df[df.condition == "TRANSIENT"]
+    if len(tr):
+        def slope(sub: pd.DataFrame) -> float:
+            m = sub[sub["round"].between(3, 10)].groupby("round")["hack_attempt"].mean()
+            return float(np.polyfit(m.index.values, logit(np.clip(m.values, 0.5 / N, 1 - 0.5 / N)), 1)[0])
+
+        bs = [slope(_resample_runs(tr, rng)) for _ in range(n_boot)]
+        out["transient_logit_slope"] = {"est": slope(tr), "ci95": [float(np.percentile(bs, 2.5)),
+                                                                   float(np.percentile(bs, 97.5))]}
+    if "h1_marginal" in h2_out:
+        comp = r0_components(df, h2_out["h1_marginal"])
+        r0s = []
+        for _ in range(n_boot):  # runs resampled within condition; h1 refitted on each resample
+            db = _resample_runs(df, rng)
+            try:
+                r0s.append(r0_components(db, hazard.marginal_h1(hazard.fit_cloglog(risk_set(db), SLOPES),
+                                                                "k_nonseed_pro"))["R0"])
+            except (np.linalg.LinAlgError, KeyError):
+                continue
+        comp["R0_ci95"] = [float(np.nanpercentile(r0s, 2.5)), float(np.nanpercentile(r0s, 97.5))]
+        out["R0"] = comp
+    lw, pm = out["late_window"], h4_out.get("post_map", {})
+    r0ci = out.get("R0", {}).get("R0_ci95", [np.nan, np.nan])
+    sustained = bool(lw) and lw["p_signflip"] < 0.05 and (r0ci[0] > 1 or pm.get("regime") == "bistable")
+    decaying = bool(lw) and (lw["p_tost_paired"] < 0.05 or r0ci[1] < 1)
+    out["decision"] = "self-sustaining" if sustained else ("decaying" if decaying else "inconclusive")
     return out
 
 
-def epi_parameters(df: pd.DataFrame, assay_out: dict) -> dict:
-    """gamma (recovery), pi (P(post pro | hacking)), h1 and R0 = pi K h1 / gamma for MAIN."""
-    m = df[df.condition == "MAIN"]
-    inf_prev = m[m.prev_hack == True]
-    gamma = float(1 - inf_prev["hack_attempt"].mean()) if len(inf_prev) else float("nan")  # P(stop hacking)
-    pi = float(m[m.hack_attempt]["post_pro"].mean()) if m.hack_attempt.any() else float("nan")
-    tab = {r["k"]: r for r in assay_out.get("table", [])}
-    h1v = (tab[1]["hack"] - tab[0]["hack"]) if 0 in tab and 1 in tab else float("nan")
-    return {"gamma": gamma, "pi": pi, "h1": h1v, "R0": transmission.board_R0(pi, 6, h1v, gamma)}
+def growth_curves(df: pd.DataFrame, identifiable: bool | None) -> dict:
+    """Descriptive growth-curve fits of cumulative first hack attempts per condition (prereg §9.4)."""
+    out = {"identifiability_passed": identifiable}
+    for cond in ("MAIN", "TRANSIENT", "PLACEBO"):
+        sub = df[df.condition == cond]
+        if not len(sub):
+            continue
+        first = sub[sub.hack_attempt].groupby(["run", "agent"])["round"].min().reset_index()
+        C = np.array([[int((first[first.run == r]["round"] <= t).sum()) for t in range(11)] for r in sub.run.unique()])
+        fits = curves.fit_all(C, N)
+        best = min(f.aicc for f in fits.values())
+        r = fits["logistic"].params["r"]
+        out[cond] = {"fits": {m: {"params": f.params, "aicc": f.aicc, "delta_aicc": f.aicc - best}
+                              for m, f in fits.items()},
+                     "logistic_r": r, "doubling_time_rounds": curves.doubling_time(r),
+                     "mean_cumulative": C.mean(0).tolist()}
+    return out
 
 
-def h5(df: pd.DataFrame, assay_out: dict, par: dict, N: int, rng: np.random.Generator, reps: int = 500) -> dict:
-    """Simulate MAIN/TRANSIENT with the assay kernel; score observed run curves (CRPS, log score) vs broadcast-only."""
-    if "hack" not in assay_out:
+# ============================================================================================ H5
+def loo_logistic_pmfs(obs: np.ndarray) -> list[np.ndarray]:
+    """For each held-out run, Binomial(N, p(t)) pmfs with p(t) = ceiling * logistic(t) fitted to the other runs."""
+    t = np.arange(obs.shape[1], dtype=float)
+    pmfs = []
+    for i in range(obs.shape[0]):
+        rest = np.delete(obs, i, axis=0)
+
+        def nll(th, rest=rest):
+            p = np.clip(expit(th[0]) * expit(th[1] * (t - th[2])), 1e-9, 1 - 1e-9)
+            return -np.sum(rest * np.log(p) + (N - rest) * np.log1p(-p))
+
+        th = min((optimize.minimize(nll, s, method="Nelder-Mead") for s in ([0, 0.5, 3], [-1, 1, 5], [1, 0.2, 1])),
+                 key=lambda r: r.fun).x
+        p = expit(th[0]) * expit(th[1] * (t - th[2]))
+        pmfs.append(np.stack([binom.pmf(np.arange(N + 1), N, pt) for pt in p]))  # rounds x (N+1)
+    return pmfs
+
+
+def h5(df: pd.DataFrame, h4_out: dict, sim_params: dict, rng, reps: int = 10000) -> dict:
+    """Out-of-sample forecasts of MAIN and TRANSIENT prevalence counts (prereg §9.5)."""
+    if "hack" not in h4_out or not sim_params:
         return {}
-    w = dict(assay_out["hack"]["weibull"]["params"])  # assay-fitted Weibull kernel (nests the simple model)
-    w["eps"] = float(df[(df.condition == "PLACEBO") & (df["round"] >= 1)]["hack_attempt"].mean())  # background
+    w = dict(h4_out["hack"]["weibull"]["params"])
+    w["eps"] = float(df[(df.condition == "PLACEBO") & (df["round"] >= 1)]["hack_attempt"].mean())  # baseline
     kernel = lambda k: dose.curve("weibull", w, k)
+    pi = h4_out["pi_from_assay"]
     out = {}
     for cond, last in [("MAIN", None), ("TRANSIENT", 1)]:
-        obs = df[df.condition == cond].groupby(["run_id", "round"])["hack_attempt"].sum().unstack().values
+        obs = df[df.condition == cond].groupby(["run", "round"])["hack_attempt"].sum().unstack().values.astype(int)
         if obs.size == 0:
             continue
         T = obs.shape[1] - 1
-        sims = {name: simulate.simulate_many(reps, rng, N=N, K=6, T=T, n_seeds=2, infect=kernel,
-                                             recover=par["gamma"], pi=pi_, seed_last_round=last)
-                for name, pi_ in [("assay_model", par["pi"]), ("broadcast_only", 0.0)]}
-        out[cond] = {name: {"crps": float(np.mean([stats.crps_ensemble(s[:, t], o[t]) for o in obs
-                                                    for t in range(1, T + 1)])),
-                            "log_score": float(np.mean([stats.log_score_counts(s[:, t], int(o[t]), N) for o in obs
-                                                        for t in range(1, T + 1)])),
-                            "mean_curve": s.mean(0).tolist(), "lo": np.percentile(s, 2.5, 0).tolist(),
-                            "hi": np.percentile(s, 97.5, 0).tolist()}
-                     for name, s in sims.items()}
-        out[cond]["observed_mean"] = obs.mean(0).tolist()
+        pmf_sets, curves_ = {}, {}
+        for name, (ph, pn) in {"assay_model": (pi["pi_h"], pi["pi_n"]), "broadcast_only": (0.0, 0.0)}.items():
+            sims = simulate.simulate_many(reps, rng, N=N, K=K, T=T, n_seeds=M_SEEDS, infect=kernel,
+                                          recover=sim_params["recover"], pi_h=ph, pi_n=pn, seed_last_round=last)
+            pmf_sets[name] = [[stats.pmf_from_samples(sims[:, t], N) for t in range(T + 1)]] * len(obs)
+            curves_[name] = {"mean_curve": sims.mean(0).tolist(), "lo": np.percentile(sims, 5, 0).tolist(),
+                             "hi": np.percentile(sims, 95, 0).tolist()}
+        pmf_sets["loo_logistic"] = loo_logistic_pmfs(obs)
+        scores = {name: pd.DataFrame([{
+            "crps": np.mean([stats.crps_star(pm[i][t], o[t]) for t in range(1, T + 1)]),
+            "log": np.mean([stats.log_score(pm[i][t], o[t]) for t in range(1, T + 1)]),
+            "cover": np.mean([stats.interval_covers(pm[i][t], o[t]) for t in range(1, T + 1)])}
+            for i, o in enumerate(obs)]) for name, pm in pmf_sets.items()}
+        test = stats.compare_paired(scores["broadcast_only"]["crps"].values, scores["assay_model"]["crps"].values,
+                                    sesoi=0.0, rng=rng)  # H: broadcast CRPS* - assay CRPS* > 0
+        res = {n: {"crps": float(s["crps"].mean()), "log_score": float(s["log"].mean()),
+                   "coverage90": float(s["cover"].mean())} | curves_.get(n, {}) for n, s in scores.items()}
+        res["observed_mean"] = obs.mean(0).tolist()
+        res["p_assay_better_than_broadcast"] = test["p_signflip"]
+        res["supported"] = bool(test["p_signflip"] < 0.05 and res["assay_model"]["crps"] <= res["loo_logistic"]["crps"]
+                                and res["assay_model"]["coverage90"] >= 0.75)
+        out[cond] = res
     return out
 
 
-# ----------------------------------------------------------------------------------------------- driver
-def run_all(batch_dir: Path, assay_path: Path | None, labels_path: Path, out_dir: Path, N: int = 32) -> dict:
-    """Compute everything and write results/summary.json + CSV tables."""
-    rng = np.random.default_rng(RNG_SEED)  # one stream for all resampling (reproducible)
+# ============================================================================================ driver
+def run_all(batch_dir: Path, assay_path: Path | None, labels_path: Path, out_dir: Path, data_dir: Path = Path("data"),
+            n_perm: int = 1000, n_boot: int = 2000, reps: int = 10000) -> dict:
+    """Compute everything and write results/summary.json + tables."""
+    rng = np.random.default_rng(RNG_SEED)
     out_dir.mkdir(parents=True, exist_ok=True)
     labels = json.loads(labels_path.read_text(encoding="utf-8")) if labels_path.exists() else {}
     recs, posts = load_runs(batch_dir)
     df = attach_exposure(recs, posts, labels)
-    prev = prevalence_table(df)
+    prev = df.groupby(["condition", "run_id", "round"])["hack_attempt"].mean().rename("prevalence").reset_index()
     prev.to_csv(out_dir / "prevalence_by_round.csv", index=False)
-    summary = {"n_runs": df.groupby("condition")["run_id"].nunique().to_dict(), "h1": h1(prev, rng), "h2": h2(df, rng)}
+    rm = run_means(df, range(1, 11))
+    S = {"n_runs": df.groupby("condition")["run_id"].nunique().to_dict()}
+    S["h1"] = {"MAIN_vs_PLACEBO": paired(rm, "MAIN", "PLACEBO", rng),
+               "TRANSIENT_vs_PLACEBO": paired(rm, "TRANSIENT", "PLACEBO", rng)}
+    S["h2"] = h2(df, rng, n_perm=n_perm, n_boot=n_boot)
+    assay = None
     if assay_path and assay_path.exists():
         assay = pd.DataFrame([json.loads(x) for x in assay_path.read_text(encoding="utf-8").splitlines() if x])
-        summary["assay"] = assay_analysis(assay, labels, rng)
-    p = {"H1": summary["h1"].get("MAIN_vs_PLACEBO", {}).get("p_perm"),
-         "H2": summary["h2"].get("k_nonseed_pro", {}).get("p_one_sided"),
-         "H4": summary.get("assay", {}).get("lrt_simple_vs_weibull", {}).get("p_value")}
-    avail = {k: v for k, v in p.items() if v is not None}
-    summary["holm"] = dict(zip(avail, map(float, stats.holm(list(avail.values()))))) if avail else {}
-    summary["curves"] = curve_table(df, N)
-    summary["epi_parameters"] = epi_parameters(df, summary.get("assay", {}))
-    summary["h5"] = h5(df, summary.get("assay", {}), summary["epi_parameters"], N, rng)
-    summary["descriptives"] = (df.groupby("condition").agg(
+        assay["post_pro"] = [labels.get(f"assay:{t}", {}).get("p_pro", np.nan) >= 0.5 for t in assay["trial_id"]]
+        S["h4"] = h4(assay, rng, n_boot=n_boot)
+    p = {"H1": S["h1"]["MAIN_vs_PLACEBO"].get("p_signflip"), "H2": S["h2"].get("k_nonseed_pro", {}).get("p_one_sided"),
+         "H4": S.get("h4", {}).get("lrt_simple_vs_weibull", {}).get("p_value")}
+    avail = {k_: v for k_, v in p.items() if v is not None}
+    S["holm"] = dict(zip(avail, map(float, stats.holm(list(avail.values()))))) if avail else {}
+    S["h3"] = h3(df, run_means(df, range(8, 11)), S["h2"], S.get("h4", {}), rng, n_boot=min(n_boot, 1000))
+    power_path, sim_path = data_dir / "power.json", data_dir / "sim_params.json"
+    ident = json.loads(power_path.read_text())["identifiability"]["passes_80pct"] if power_path.exists() else None
+    S["growth_curves"] = growth_curves(df, ident)
+    S["h5"] = h5(df, S.get("h4", {}), json.loads(sim_path.read_text()) if sim_path.exists() else {}, rng, reps)
+    S["descriptives"] = df.groupby("condition").agg(
         hack_attempt=("hack_attempt", "mean"), hack_success=("hack_success", "mean"), flag=("flagged", "mean"),
-        capable=("strict_original_pass", "mean"), probe_p_yes=("probe_p_yes", "mean")).round(4).to_dict("index"))
-    summary["mechanisms"] = df[df.hack_attempt].groupby(["condition", "mechanism"]).size().unstack(fill_value=0) \
-        .to_dict("index")
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=1, default=float), encoding="utf-8")
-    df.drop(columns=["attempts"]).to_parquet(out_dir / "agent_rounds.parquet", index=False)  # analysis table
-    return summary
+        capable=("strict_original_pass", "mean"), probe_p_yes=("probe_p_yes", "mean"),
+        post_pro=("post_pro", "mean"), unparseable=("unparseable", "mean")).round(4).to_dict("index")
+    S["mechanisms"] = df[df.hack_attempt].groupby(["condition", "mechanism"]).size().unstack(fill_value=0).to_dict("index")
+    (out_dir / "summary.json").write_text(json.dumps(S, indent=1, default=float), encoding="utf-8")
+    df.drop(columns=["attempts"]).to_parquet(out_dir / "agent_rounds.parquet", index=False)
+    if assay is not None:
+        assay.drop(columns=["attempts"]).to_parquet(out_dir / "assay_trials.parquet", index=False)
+    return S

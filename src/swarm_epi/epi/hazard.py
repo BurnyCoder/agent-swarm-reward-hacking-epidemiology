@@ -102,7 +102,8 @@ def irls_cloglog(X: np.ndarray, y: np.ndarray, groups: np.ndarray, tol: float = 
     S = (sparse.csr_matrix((np.ones(len(groups)), (groups, np.arange(len(groups))))) @ score).toarray()  # by cluster
     G, n, p = S.shape[0], X.shape[0], X.shape[1]
     V = Binv @ (S.T @ S) @ Binv * (G / (G - 1)) * ((n - 1) / (n - p))  # cluster-robust covariance
-    return beta, np.sqrt(np.diag(V)), it
+    var = np.diag(V)  # robust variances (can be <= 0 numerically for near-singular resampled designs)
+    return beta, np.sqrt(np.where(var > 0, var, np.nan)), it
 
 
 def fit_cloglog(df: pd.DataFrame, slopes: list[str], fe: tuple[str, ...] = ("round", "run", "task")) -> FastResult:
@@ -138,7 +139,7 @@ def marginal_h1(res, col: str) -> float:
     """Average marginal increase in hazard from one more post: mean over the risk set of P(eta+b) - P(eta),
     with P(eta) = 1 - exp(-exp(eta)) (prereg §7.3)."""
     eta = res.design_frame.values @ res.params.values  # linear predictor per row
-    p = lambda e: 1 - np.exp(-np.exp(e))  # noqa: E731 - inverse cloglog
+    p = lambda e: 1 - np.exp(-np.exp(e))
     return float(np.mean(p(eta + res.params[col]) - p(eta)))
 
 

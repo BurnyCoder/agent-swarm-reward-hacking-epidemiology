@@ -87,8 +87,9 @@ def test_pipeline_end_to_end(tmp_path):
                                                        "p_anti": 0.0, "p_neutral": 0.0}
     lp = tmp_path / "labels.json"
     lp.write_text(json.dumps(labels))
-    summary = analysis.run_all(tmp_path, None, lp, tmp_path / "results", N=8)
-    assert summary["h1"]["MAIN_vs_PLACEBO"]["diff"] > 0
+    summary = analysis.run_all(tmp_path, None, lp, tmp_path / "results", data_dir=tmp_path, n_perm=20, n_boot=20,
+                               reps=200)
+    assert summary["h1"]["MAIN_vs_PLACEBO"]["diff"] > 0 and summary["h1"]["MAIN_vs_PLACEBO"]["n_pairs"] == 4
     assert summary["h2"]["k_nonseed_pro"]["beta"] > 0
     assert (tmp_path / "results" / "summary.json").exists()
     written = figures.make_all(tmp_path / "results")  # figures render from results files alone

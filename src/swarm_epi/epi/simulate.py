@@ -1,12 +1,13 @@
-"""Matched agent-based chain-binomial simulator of the board epidemic (null models, power analysis, H5 predictions).
+"""Matched agent-based chain-binomial simulator of the board epidemic (power analysis, H5 forecasts), vectorized.
 
-Local context: mirrors the swarm mechanics exactly — N agents, m seed slots (pro-hack posts while active), each agent
-reads K of the previous round's other posts uniformly without replacement; an infected agent's post is pro-hack with
-probability pi; a susceptible agent becomes infected with probability infect(k) given k pro-hack posts read (the
-dose-response kernel, background rate included as infect(0)); an infected agent recovers with probability `recover`
-per round. This is the Reed-Frost chain binomial (Britton 2018, https://arxiv.org/abs/1801.09594, §2.3) generalized
-from "contacts with infectives" to "infected posts read", which none of EoN/NDlib/epydemic implement directly.
-Global context: `analysis.py` (H5 envelopes and scores) and the pilot power/identifiability study.
+Local context: mirrors the swarm mechanics — N agents and m seed slots (pro-hack posts while active); each round every
+agent reads K of the previous round's OTHER posts uniformly without replacement (random keys + argpartition, i.e. a
+uniform K-subset); a susceptible agent starts hacking with probability infect(k) given k pro-hack posts read (the
+dose-response kernel, background included as infect(0)); a hacking agent stops with probability `recover` per round;
+an agent's post is pro-hack with probability pi_h if it is hacking and pi_n otherwise. This is the Reed-Frost chain
+binomial (Britton 2018, https://arxiv.org/abs/1801.09594, §2.3) with exposure to K of the board's posts instead of
+contact with every infective (our adaptation; EoN / NDlib / epydemic have no K-of-N board process).
+Global context: `epi.power` (pre-registered power/identifiability) and `analysis.h5` (out-of-sample forecasts).
 """
 
 from __future__ import annotations  # forward references
@@ -16,33 +17,33 @@ from collections.abc import Callable  # kernel type
 import numpy as np  # numerics
 
 
-def simulate(N: int, K: int, T: int, n_seeds: int, infect: Callable[[np.ndarray], np.ndarray], recover: float,
-             pi: float, rng: np.random.Generator, seed_last_round: int | None = None,
-             cumulative: bool = False) -> np.ndarray:
-    """One run; returns infected counts (or, if `cumulative`, ever-infected counts) among N agents for rounds 0..T."""
-    infected = rng.random(N) < infect(np.zeros(N))  # round 0 (empty board): background infections only
-    ever = infected.copy()  # agents infected at least once
-    pro = infected & (rng.random(N) < pi)  # which agents' round-0 posts are pro-hack
-    seeds_active = n_seeds > 0 and (seed_last_round is None or seed_last_round >= 0)  # seeds post in round 0
-    out = [int(ever.sum() if cumulative else infected.sum())]  # trajectory
+def simulate_many(reps: int, rng: np.random.Generator, N: int, K: int, T: int, n_seeds: int,
+                  infect: Callable[[np.ndarray], np.ndarray], recover: float, pi_h: float, pi_n: float = 0.0,
+                  seed_last_round: int | None = None, cumulative: bool = False) -> np.ndarray:
+    """`reps` independent runs; returns hacking counts (or ever-hacked counts if `cumulative`), shape reps x (T+1)."""
+    hack = rng.random((reps, N)) < infect(np.zeros((reps, N)))  # round 0 (empty board): background only
+    ever = hack.copy()  # cumulative incidence
+    pro = np.where(hack, rng.random((reps, N)) < pi_h, rng.random((reps, N)) < pi_n)  # round-0 post stance
+    seeds = n_seeds if n_seeds > 0 and (seed_last_round is None or seed_last_round >= 0) else 0  # active slots
+    out = [(ever if cumulative else hack).sum(1)]
+    agents = np.arange(N)
     for t in range(1, T + 1):
-        posts_pro = np.concatenate([pro, np.ones(n_seeds if seeds_active else 0, bool)])  # agents then seed slots
-        n_posts = posts_pro.size  # readable posts this round (minus own)
-        k = np.empty(N, int)  # pro-hack posts read by each agent
-        for i in range(N):  # sample K of the other posts uniformly without replacement
-            others = np.delete(np.arange(n_posts), i)  # exclude own post
-            idx = rng.choice(others, size=min(K, others.size), replace=False)
-            k[i] = posts_pro[idx].sum()
-        new_inf = (~infected) & (rng.random(N) < infect(k))  # infections among susceptibles
-        stay = infected & (rng.random(N) >= recover)  # infected who do not recover
-        infected = new_inf | stay  # SIS update
-        ever |= infected  # cumulative incidence
-        pro = infected & (rng.random(N) < pi)  # posts written this round
-        seeds_active = n_seeds > 0 and (seed_last_round is None or t <= seed_last_round)  # seed posts this round
-        out.append(int(ever.sum() if cumulative else infected.sum()))
-    return np.array(out)
+        posts = np.concatenate([pro, np.ones((reps, seeds), bool)], axis=1)  # agents' posts then seed posts
+        P = posts.shape[1]
+        keys = rng.random((reps, N, P))  # random sort keys per reader
+        keys[:, agents, agents] = np.inf  # never read own post (agent i wrote post i)
+        idx = np.argpartition(keys, K, axis=2)[:, :, :K]  # uniform K-subset of the other posts
+        k = np.take_along_axis(np.broadcast_to(posts[:, None, :], (reps, N, P)), idx, axis=2).sum(2)  # pro read
+        start = ~hack & (rng.random((reps, N)) < infect(k))  # new hackers among susceptibles
+        stay = hack & (rng.random((reps, N)) >= recover)  # hackers who continue
+        hack = start | stay  # SIS update
+        ever |= hack
+        pro = np.where(hack, rng.random((reps, N)) < pi_h, rng.random((reps, N)) < pi_n)  # posts of round t
+        seeds = n_seeds if n_seeds > 0 and (seed_last_round is None or t <= seed_last_round) else 0
+        out.append((ever if cumulative else hack).sum(1))
+    return np.stack(out, axis=1)
 
 
-def simulate_many(reps: int, rng: np.random.Generator, **kw) -> np.ndarray:
-    """`reps` independent runs stacked as an array (reps x T+1)."""
-    return np.stack([simulate(rng=rng, **kw) for _ in range(reps)])
+def simulate(rng: np.random.Generator, **kw) -> np.ndarray:
+    """Single run (convenience wrapper)."""
+    return simulate_many(1, rng, **kw)[0]

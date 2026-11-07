@@ -10,6 +10,7 @@ Phases, in pre-registered order:
   harvest     assay pools + PLACEBO note snapshots from pilot    -> data/assay_pools.json
   assay       randomized dose-response assay                     -> $RUNS_DIR/assay/assay.jsonl
   batch1      MAIN x20, PLACEBO x20, TRANSIENT x15 swarms        -> $RUNS_DIR/batch1/
+  power       simulation power + identifiability (no LLM)     -> data/power.json
   judge       label every post (batch1 board, seed pools, assay)  -> results/post_labels.json
 Each phase is resumable: re-running skips finished work.
 """
@@ -106,6 +107,16 @@ async def main(args: argparse.Namespace) -> None:
     elif args.phase == "batch1":
         await run_many(conditions.batch1(variant), llm, sandbox, tasks, read_json("pools.json"), runs / "batch1",
                        args.parallel)
+    elif args.phase == "power":  # prereg §8.6 with pilot constants
+        from swarm_epi.epi import power
+        calib, sim = read_json("calibration.json"), read_json("sim_params.json")
+        eps = calib["rates"][calib["chosen"]]["0"]["rate"]  # baseline hazard of the chosen prompt
+        pis = {"pi_h": 0.5, "pi_n": 0.02}  # conservative stance assumptions until the assay measures them
+        res = {"h1_power": [power.h1_power(eps, h1, sim["recover"], **pis, n_sim=args.n or 1000)
+                            for h1 in (0.0, 0.01, 0.02, 0.05, 0.10, 0.20)],
+               "identifiability": power.identifiability(n_sim=args.n or 100), "eps": eps, "assumed": pis,
+               "recover": sim["recover"]}
+        (DATA / "power.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
     elif args.phase == "judge":
         labels = {}  # post key -> judge scores
         for item in read_json("pools.json")["hack"] + read_json("pools.json")["placebo"]:
@@ -131,7 +142,7 @@ async def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("phase", choices=["smoke", "capability", "pools", "calibrate", "pilot", "harvest", "assay",
-                                      "batch1", "judge"])
+                                      "batch1", "power", "judge"])
     ap.add_argument("--parallel", type=int, default=4, help="concurrent swarm replicates")
     ap.add_argument("--n", type=int, default=None, help="override trial/pool counts (pilot use)")
     ap.add_argument("--quiet", action="store_true", help="do not echo every LLM call to the terminal")
