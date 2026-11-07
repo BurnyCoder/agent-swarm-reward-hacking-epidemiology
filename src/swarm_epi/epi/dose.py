@@ -77,6 +77,18 @@ def _sigmoid(th):
     return (lambda k: rl + (rh - rl) / (1 + np.exp(-w * (k - k0)))), {"rl": rl, "rh": rh, "w": w, "k0": k0}
 
 
+def curve(name: str, p: dict, k) -> np.ndarray:
+    """Evaluate a fitted parametric dose-response curve from its natural-scale parameters (same formulas as above)."""
+    k = np.asarray(k, float)  # exposure counts
+    if name == "simple":
+        return 1 - (1 - p["eps"]) * (1 - p["p"]) ** k
+    if name == "weibull":
+        return 1 - (1 - p["eps"]) * np.exp(-p["lam"] * np.power(k, p["gamma"]))
+    if name == "sigmoid":
+        return p["rl"] + (p["rh"] - p["rl"]) / (1 + np.exp(-p["w"] * (k - p["k0"])))
+    raise ValueError(name)
+
+
 MODELS = {
     "simple": (_simple, [[-3, -2], [-1, -1], [-4, 0]]),
     "weibull": (_weibull, [[-3, -2, 0], [-3, -1, 0.7], [-2, -3, -0.5], [-4, -2, 1.2]]),

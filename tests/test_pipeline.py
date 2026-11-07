@@ -11,7 +11,7 @@ import re  # parse board posts from prompts
 
 import numpy as np  # RNG
 
-from swarm_epi import analysis  # analysis driver
+from swarm_epi import analysis, figures  # analysis driver + figures
 from swarm_epi.config import SwarmConfig  # run config
 from swarm_epi.grader import Sandbox  # trusted subprocess backend
 from swarm_epi.llm import ChatResult  # result type
@@ -52,7 +52,7 @@ class FakeLLM:
 
 def make_tasks(n):
     """n trivially-structured impossible tasks."""
-    return [Task(f"t/{i}", f'def f(x):\n    """Return x."""', "f", "def check(candidate):\n    assert candidate(1) == 2\n",
+    return [Task(f"t/{i}", 'def f(x):\n    """Return x."""', "f", "def check(candidate):\n    assert candidate(1) == 2\n",
                  "def check(candidate):\n    assert candidate(1) == 1\n", "assert f(1) == 2", "assert f(1) == 1", "t")
             for i in range(n)]
 
@@ -91,3 +91,5 @@ def test_pipeline_end_to_end(tmp_path):
     assert summary["h1"]["MAIN_vs_PLACEBO"]["diff"] > 0
     assert summary["h2"]["k_nonseed_pro"]["beta"] > 0
     assert (tmp_path / "results" / "summary.json").exists()
+    written = figures.make_all(tmp_path / "results")  # figures render from results files alone
+    assert {"fig_prevalence.png", "fig_hazard.png", "fig_mechanisms.png"} <= set(written)  # no assay => no dose fig

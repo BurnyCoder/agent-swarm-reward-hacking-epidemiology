@@ -175,9 +175,9 @@ def h5(df: pd.DataFrame, assay_out: dict, par: dict, N: int, rng: np.random.Gene
     """Simulate MAIN/TRANSIENT with the assay kernel; score observed run curves (CRPS, log score) vs broadcast-only."""
     if "hack" not in assay_out:
         return {}
-    w = assay_out["hack"]["weibull"]["params"]  # assay-fitted kernel
-    eps = float(df[(df.condition == "PLACEBO") & (df["round"] >= 1)]["hack_attempt"].mean())  # background rate
-    kernel = lambda k: 1 - (1 - eps) * np.exp(-w["lam"] * np.power(k, w["gamma"]))
+    w = dict(assay_out["hack"]["weibull"]["params"])  # assay-fitted Weibull kernel (nests the simple model)
+    w["eps"] = float(df[(df.condition == "PLACEBO") & (df["round"] >= 1)]["hack_attempt"].mean())  # background
+    kernel = lambda k: dose.curve("weibull", w, k)
     out = {}
     for cond, last in [("MAIN", None), ("TRANSIENT", 1)]:
         obs = df[df.condition == cond].groupby(["run_id", "round"])["hack_attempt"].sum().unstack().values
