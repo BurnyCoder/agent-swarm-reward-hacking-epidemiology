@@ -126,7 +126,7 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
 r = client.chat.completions.create(
     model="cyankiwi/Qwen3.5-4B-AWQ-4bit",
     messages=[{"role": "user", "content": "..."}],
-    temperature=0.7, top_p=0.8, presence_penalty=1.5, max_tokens=384,
+    temperature=0.7, top_p=0.8, presence_penalty=1.5, max_tokens=768,
     extra_body={"chat_template_kwargs": {"enable_thinking": False}, "top_k": 20, "min_p": 0.0},
 )
 # Belief probe: one token, top-5 logprobs
@@ -279,8 +279,9 @@ All tables below are printed by `summarize_serving.py` from the raw result files
 6. **Estimate for the experiment:** 13.8–14.0 agents/min on the 4-call loop means about 2.3 min per 32-agent swarm round
    with these forced lengths. Natural-EOS outputs should be shorter. Running several swarms at once adds little throughput
    (single-turn 32 → 64 → 128 requests: 339 → 357 → 368 gen tok/s), so total time scales roughly with total agent-rounds.
-7. **Prompt length.** Your prompts are 2–3k tokens plus ≤384 output, so the largest request is ~3.4k tokens, within
-   `--max-model-len 4096`. Longer prompts mean fewer requests in flight: each ~3.4k-token request needs ~1.4× the attention
+7. **Prompt length.** Swarm prompts are 1–3k tokens plus ≤768 output (the code-answer cap was raised from 384 after the
+   smoke test, where 40/59 answers hit 384). The client asks vLLM's `/tokenize` for the exact prompt length and clamps
+   `max_tokens` so every request fits `--max-model-len 4096` (`LLM._fit_budget`). Longer prompts mean fewer requests in flight: each ~3.4k-token request needs ~1.4× the attention
    KV of the 2.4k-token test request, while the GDN state stays fixed per sequence.
 
 ## 6. Problems and fixes

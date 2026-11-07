@@ -21,6 +21,7 @@ from dataclasses import dataclass  # call result
 from datetime import UTC, datetime  # timestamps
 from pathlib import Path  # log file path
 
+import httpx  # HTTP client (installed with openai) for the /tokenize endpoint
 from openai import AsyncOpenAI  # official SDK (v3)
 
 from .config import LLMConfig  # server + sampling settings
@@ -42,7 +43,7 @@ def setup_logging(log_dir: Path, name: str) -> Path:
     for h in (fh, sh):
         h.setFormatter(fmt)
         root.addHandler(h)
-    for noisy in ("httpx", "openai", "httpcore"):  # silence per-request HTTP chatter
+    for noisy in ("httpx", "httpx2", "httpcore", "httpcore2", "openai"):  # silence per-request HTTP chatter (openai 3.x uses httpx2)
         logging.getLogger(noisy).setLevel(logging.WARNING)
     return log_dir / f"{name}_{stamp}_llm_calls.jsonl"  # structured log of every LLM call
 
@@ -66,6 +67,8 @@ class LLM:
         self.client = AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key, timeout=cfg.request_timeout_s,
                                   max_retries=cfg.max_retries)  # SDK retries transient errors with backoff
         self.sem = asyncio.Semaphore(cfg.max_concurrency)  # cap concurrent HTTP requests
+        self.http = httpx.AsyncClient(timeout=30.0)  # for vLLM's /tokenize (served at the root, not under /v1)
+        self.tokenize_url = cfg.base_url.rstrip("/").removesuffix("/v1") + "/tokenize"  # e.g. http://localhost:8000/tokenize
         self.jsonl_path = jsonl_path  # where call records go
         self.echo = echo  # print every call in full to the terminal
         self.tokens_out = 0  # running total of generated tokens (throughput dashboard)
@@ -79,6 +82,23 @@ class LLM:
             msgs = "\n".join(f"[{m['role']}] {m['content']}" for m in rec["messages"])
             log.info("LLM CALL %s\n%s\n[assistant] %s\n", json.dumps(rec["tags"]), msgs, rec["output"])
 
+    async def _fit_budget(self, messages: list[dict], max_tokens: int, template_kwargs: dict) -> tuple[int, int]:
+        """Clamp max_tokens so prompt + output fits the server's max_model_len; returns (prompt_count, max_tokens).
+
+        vLLM rejects a request whose prompt + max_tokens exceeds --max-model-len with HTTP 400. Its /tokenize endpoint
+        (https://docs.vllm.ai/en/latest/serving/openai_compatible_server/#tokenizer-api) applies the same chat
+        template to `messages` and returns {"count", "max_model_len", ...}, so the clamp is exact.
+        """
+        r = await self.http.post(self.tokenize_url, json={  # same template + kwargs as the completion request
+            "model": self.cfg.model, "messages": messages, "add_generation_prompt": True,
+            "chat_template_kwargs": template_kwargs})
+        r.raise_for_status()  # surface server errors
+        d = r.json()  # {"count": n_prompt_tokens, "max_model_len": L, "tokens": [...]}
+        room = d["max_model_len"] - d["count"]  # tokens left for the output
+        if room < max_tokens:  # rare: long feedback + two long attempts; logged so it can be counted
+            log.warning("output budget clamped %d -> %d (prompt %d tokens)", max_tokens, max(room, 1), d["count"])
+        return d["count"], max(1, min(max_tokens, room))  # at least 1 token so the request stays valid
+
     async def chat(self, messages: list[dict], max_tokens: int, tags: dict | None = None, seed: int | None = None,
                    top_logprobs: int = 0, temperature: float | None = None) -> ChatResult:
         """One chat completion with the model-card sampling parameters (thinking disabled)."""
@@ -86,6 +106,9 @@ class LLM:
         extra = {"top_k": cfg.top_k, "min_p": cfg.min_p,
                  "chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}}  # model-card extra_body
         async with self.sem:  # respect concurrency cap
+            requested = max_tokens  # cap asked for by the caller (logged next to the effective one)
+            if max_tokens > 1:  # 1-token probes cannot overflow; skip the extra request
+                _, max_tokens = await self._fit_budget(messages, max_tokens, extra["chat_template_kwargs"])
             t0 = time.perf_counter()  # latency start
             resp = await self.client.chat.completions.create(
                 model=cfg.model, messages=messages, max_tokens=max_tokens,
@@ -107,6 +130,7 @@ class LLM:
         self._record({
             "ts": datetime.now(UTC).isoformat(), "tags": tags or {}, "messages": messages, "output": text,
             "top_logprobs_first": tl[0] if tl else None, "seed": seed, "latency_s": round(dt, 3),
+            "max_tokens_requested": requested, "max_tokens_effective": max_tokens,
             "prompt_tokens": usage.prompt_tokens if usage else None,
             "completion_tokens": usage.completion_tokens if usage else None, "finish_reason": choice.finish_reason,
         })
