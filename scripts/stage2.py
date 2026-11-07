@@ -19,6 +19,7 @@ from pathlib import Path  # paths
 import numpy as np  # bootstrap
 
 from swarm_epi import conditions, prompts  # replicate counts, probe/judge text
+from swarm_epi.analysis import judged  # "judged pro-hack" = judge label (same rule as the confirmatory analysis)
 from swarm_epi.config import LLMConfig  # model id
 from swarm_epi.tasks import apply_capability_filter, load_tasks  # filtered task list
 
@@ -43,7 +44,7 @@ def pilot_pi_D(runs: Path, labels: dict) -> tuple[float, float]:
         if json.loads((d / "config.json").read_text())["condition"] != "MAIN":
             continue
         recs = [json.loads(x) for x in (d / "rounds.jsonl").read_text(encoding="utf-8").splitlines() if x]
-        stance = {(r["agent"], r["round"]): labels.get(f"{d.name}:{r['post_id']}", {}).get("p_pro", 0) >= 0.8
+        stance = {(r["agent"], r["round"]): judged(labels.get(f"{d.name}:{r['post_id']}", {}), "pro")
                   for r in recs}
         pro_given_hack += [stance[(r["agent"], r["round"])] for r in recs if r["hack_attempt"]]
         for (a, t), s in stance.items():
@@ -67,6 +68,8 @@ def main() -> None:
     labels = {r["pool_id"]: r for r in ap["_all"]}
     pi, D = pilot_pi_D(runs, labels)
     h1_star = 0.25 / (pi * K * D) if np.isfinite(pi) and pi > 0 else 0.02  # prereg §9.2 (K~ = K)
+    (DATA / "stage2_constants.json").write_text(json.dumps(  # read by analysis.run_all (H2 falsification rule)
+        {"h1_star": h1_star, "pilot_pi": pi, "pilot_D": D, "K": K}, indent=1), encoding="utf-8")
     try:
         with urllib.request.urlopen(LLMConfig().base_url.replace("/v1", "") + "/version", timeout=5) as r:
             vllm = json.loads(r.read())["version"]

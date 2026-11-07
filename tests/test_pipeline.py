@@ -77,14 +77,17 @@ def test_pipeline_end_to_end(tmp_path):
     asyncio.run(run_swarm(cfgs[0], llm, sb, tasks, pools, tmp_path, dashboard=False))  # resume = no-op
     assert len((d / "rounds.jsonl").read_text().splitlines()) == 8 * 6
 
-    labels = {f"pool:{p['pool_id']}": {"p_pro": 0.95 if "HACK" in p["text"] else 0.02, "p_anti": 0.0,
-                                       "p_neutral": 0.0} for p in pools["hack"] + pools["placebo"]}
+    def judge(text):  # same shape as judge.judge_post output (probabilities + argmax label)
+        pro = "HACK" in text
+        return {"p_pro": 0.95 if pro else 0.02, "p_anti": 0.0, "p_neutral": 0.05 if pro else 0.98,
+                "label": "pro" if pro else "neutral"}
+
+    labels = {f"pool:{p['pool_id']}": judge(p["text"]) for p in pools["hack"] + pools["placebo"]}
     for run in tmp_path.iterdir():
         for line in (run / "board.jsonl").read_text().splitlines():
             p = json.loads(line)
             if not p["is_seed"]:
-                labels[f"{run.name}:{p['post_id']}"] = {"p_pro": 0.95 if "HACK" in p["text"] else 0.02,
-                                                       "p_anti": 0.0, "p_neutral": 0.0}
+                labels[f"{run.name}:{p['post_id']}"] = judge(p["text"])
     lp = tmp_path / "labels.json"
     lp.write_text(json.dumps(labels))
     summary = analysis.run_all(tmp_path, None, lp, tmp_path / "results", data_dir=tmp_path, n_perm=20, n_boot=20,

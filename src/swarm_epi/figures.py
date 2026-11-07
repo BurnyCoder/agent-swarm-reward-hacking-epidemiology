@@ -87,7 +87,7 @@ def fig_hazard(summary: dict, out: Path) -> None:
             ("non-seed, run x round FE", h["robust_run_round_fe"]),
             ("author hack status (judge-free)", h["robust_author_status"]),
             ("non-seed, first-ever hack", h["sensitivity_first_ever"])]
-    fig, ax = plt.subplots(figsize=(6.5, 2.8))
+    fig, ax = plt.subplots(figsize=(8, 3.4))  # wide enough for the row labels, title and axis label
     for i, (name, r) in enumerate(rows):
         ax.errorbar(r["hr"], i, xerr=[[r["hr"] - r["hr_low"]], [r["hr_high"] - r["hr"]]], fmt="o", capsize=3,
                     color=COLORS["MAIN"] if i == 0 else INK2, markersize=7)

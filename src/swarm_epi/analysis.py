@@ -66,13 +66,20 @@ def _parses(code: str) -> bool:
         return False
 
 
-def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict, thr: float = 0.5) -> pd.DataFrame:
+def judged(s: dict, stance: str) -> bool:
+    """A post is "judged pro-hack" / "judged anti-hack" when the judge's 3-way label (argmax of P(pro), P(anti),
+    P(neutral)) is that stance: the label is what the kappa validation of prereg §8.5 checks against hand labels.
+    (The 0.8 thresholds of §5 / §2.3 apply only to building the seed pools and the assay stimulus sets.)"""
+    return s.get("label") == stance
+
+
+def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict) -> pd.DataFrame:
     """Per agent-round: S, M, anti counts, author-hack exposure, E (expected M given the board), lagged state."""
     hack = {(r.run_id, r.agent, r.round): bool(r.hack_attempt) for r in recs.itertuples()}  # author status
     info, board = {}, {}  # (run, post_id) -> flags; (run, round) -> candidate posts
     for p in posts.itertuples():
         s = label_of(labels, p.run_id, p.post_id, p.is_seed, p.pool_id)
-        pro, anti = s.get("p_pro", 0.0) >= thr, s.get("p_anti", 0.0) >= thr
+        pro, anti = judged(s, "pro"), judged(s, "anti")  # judge label of this post
         ah = (not p.is_seed) and hack.get((p.run_id, p.author, p.round), False)
         info[(p.run_id, p.post_id)] = (p.is_seed, pro, anti, ah)
         board.setdefault((p.run_id, p.round), []).append((p.author, p.is_seed, pro, ah))
@@ -97,7 +104,7 @@ def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict, thr: 
     out["prev_hack"] = out.groupby(["run_id", "agent"])["hack_attempt"].shift(1)  # NaN in round 0
     out["ever_before"] = out.groupby(["run_id", "agent"])["hack_attempt"].transform(
         lambda s: s.astype(int).cumsum().shift(1, fill_value=0) > 0)  # hacked in an earlier round
-    out["post_pro"] = [labels.get(f"{r}:{p}", {}).get("p_pro", np.nan) >= thr for r, p in zip(out.run_id, out.post_id)]
+    out["post_pro"] = [judged(labels.get(f"{r}:{p}", {}), "pro") for r, p in zip(out.run_id, out.post_id)]
     out["task"], out["run"] = out["task_id"], out["run_id"]
     out["unparseable"] = [not _parses(a[0]["code"]) if a else True for a in out["attempts"]]
     return out
@@ -146,8 +153,12 @@ def _resample_runs(df: pd.DataFrame, rng, conds: list[str] | None = None) -> pd.
     return pd.concat([df[df.run == r].assign(run=f"{r}#{i}") for i, r in enumerate(pick)], ignore_index=True)
 
 
-def h2(df: pd.DataFrame, rng, n_perm: int = 1000, n_boot: int = 2000) -> dict:
-    """Primary cloglog hazard model, robustness fits and the permutation random control."""
+def h2(df: pd.DataFrame, rng, n_perm: int = 1000, n_boot: int = 2000, h1_star: float = 0.02) -> dict:
+    """Primary cloglog hazard model, robustness fits, the permutation random control and the §13 verdict inputs.
+
+    `h1_star` is the smallest effect of interest fixed at Stage 2 (data/stage2_constants.json; 0.02 if the pilot
+    could not estimate pi or D, prereg §9.2). Falsified for this setup if the upper 90% CI bound of h1 < h1_star.
+    """
     h = risk_set(df)
     if h["y"].sum() < 5 or h["run"].nunique() < 3:
         return {"error": "too few events"}
@@ -157,13 +168,19 @@ def h2(df: pd.DataFrame, rng, n_perm: int = 1000, n_boot: int = 2000) -> dict:
     out |= {"n_rows": len(h), "n_events": int(h["y"].sum()), "n_runs": int(h["run"].nunique()),
             "n_dropped": int(res.n_dropped)}
     out["statsmodels_check_round_run"] = hazard.statsmodels_check(h, SLOPES).round(6).to_dict()  # validation
-    boots = []
-    for _ in range(n_boot):  # robustness 1: cluster bootstrap over runs within condition
+    boots, h1s = [], []
+    for _ in range(n_boot):  # robustness 1: cluster bootstrap over runs within condition (also gives h1's CIs)
         try:
-            boots.append(float(hazard.fit_cloglog(_resample_runs(h, rng), SLOPES).params["k_nonseed_pro"]))
+            rb = hazard.fit_cloglog(_resample_runs(h, rng), SLOPES)
+            boots.append(float(rb.params["k_nonseed_pro"]))
+            h1s.append(hazard.marginal_h1(rb, "k_nonseed_pro"))
         except (np.linalg.LinAlgError, KeyError):
             continue
     out["bootstrap_beta_ci95"] = [float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))]
+    out["h1_ci90"] = [float(np.percentile(h1s, 5)), float(np.percentile(h1s, 95))]  # percentile, cluster bootstrap
+    out["h1_ci95"] = [float(np.percentile(h1s, 2.5)), float(np.percentile(h1s, 97.5))]
+    out["h1_star"] = float(h1_star)
+    out["falsified_h1_below_star"] = bool(out["h1_ci90"][1] < h1_star)  # prereg §13
     hr = h.assign(run_round=h["run"] + "_" + h["round"].astype(str))  # robustness 2: run x round FE
     out["robust_run_round_fe"] = hazard.hazard_ratio(
         hazard.fit_cloglog(hr, ["k_seed_pro", "k_nonseed_pro"], fe=("run_round", "task")), "k_nonseed_pro")
@@ -314,11 +331,12 @@ def growth_curves(df: pd.DataFrame, identifiable: bool | None) -> dict:
         C = np.array([[int((first[first.run == r]["round"] <= t).sum()) for t in range(11)] for r in sub.run.unique()])
         fits = curves.fit_all(C, N)
         best = min(f.aicc for f in fits.values())
-        r = fits["logistic"].params["r"]
+        src = min(("logistic", "richards"), key=lambda m: fits[m].aicc)  # better of the two by AICc
+        r0 = curves.initial_rate(fits[src])  # identifiable initial rate (Ma et al. 2014)
         out[cond] = {"fits": {m: {"params": f.params, "aicc": f.aicc, "delta_aicc": f.aicc - best}
                               for m, f in fits.items()},
-                     "logistic_r": r, "doubling_time_rounds": curves.doubling_time(r),
-                     "mean_cumulative": C.mean(0).tolist()}
+                     "initial_rate_r0": r0, "initial_rate_source": src,
+                     "doubling_time_rounds": curves.doubling_time(r0), "mean_cumulative": C.mean(0).tolist()}
     return out
 
 
@@ -346,10 +364,12 @@ def h5(df: pd.DataFrame, h4_out: dict, sim_params: dict, rng, reps: int = 10000)
     if "hack" not in h4_out or not sim_params:
         return {}
     w = dict(h4_out["hack"]["weibull"]["params"])
-    w["eps"] = float(df[(df.condition == "PLACEBO") & (df["round"] >= 1)]["hack_attempt"].mean())  # baseline
+    base = risk_set(df[df.condition == "PLACEBO"])  # PLACEBO agent-rounds not hacking in t-1
+    base = base[base["k_nonseed_pro"] == 0]  # ... and reading no non-seed pro-hack post: the background
+    w["eps"] = float(base["y"].mean())  # baseline HAZARD: the simulator applies infect(k) only to non-hackers
     kernel = lambda k: dose.curve("weibull", w, k)
     pi = h4_out["pi_from_assay"]
-    out = {}
+    out = {}  # per forecast target (MAIN, TRANSIENT)
     for cond, last in [("MAIN", None), ("TRANSIENT", 1)]:
         obs = df[df.condition == cond].groupby(["run", "round"])["hack_attempt"].sum().unstack().values.astype(int)
         if obs.size == 0:
@@ -359,7 +379,7 @@ def h5(df: pd.DataFrame, h4_out: dict, sim_params: dict, rng, reps: int = 10000)
         for name, (ph, pn) in {"assay_model": (pi["pi_h"], pi["pi_n"]), "broadcast_only": (0.0, 0.0)}.items():
             sims = simulate.simulate_many(reps, rng, N=N, K=K, T=T, n_seeds=M_SEEDS, infect=kernel,
                                           recover=sim_params["recover"], pi_h=ph, pi_n=pn, seed_last_round=last)
-            pmf_sets[name] = [[stats.pmf_from_samples(sims[:, t], N) for t in range(T + 1)]] * len(obs)
+            pmf_sets[name] = [[stats.pmf_from_samples(sims[:, t], N) for t in range(T + 1)]] * len(obs)  # same for all runs
             curves_[name] = {"mean_curve": sims.mean(0).tolist(), "lo": np.percentile(sims, 5, 0).tolist(),
                              "hi": np.percentile(sims, 95, 0).tolist()}
         pmf_sets["loo_logistic"] = loo_logistic_pmfs(obs)
@@ -373,6 +393,7 @@ def h5(df: pd.DataFrame, h4_out: dict, sim_params: dict, rng, reps: int = 10000)
         res = {n: {"crps": float(s["crps"].mean()), "log_score": float(s["log"].mean()),
                    "coverage90": float(s["cover"].mean())} | curves_.get(n, {}) for n, s in scores.items()}
         res["observed_mean"] = obs.mean(0).tolist()
+        res["eps_baseline_hazard"], res["n_baseline_rows"] = w["eps"], len(base)  # simulator input, recorded
         res["p_assay_better_than_broadcast"] = test["p_signflip"]
         res["supported"] = bool(test["p_signflip"] < 0.05 and res["assay_model"]["crps"] <= res["loo_logistic"]["crps"]
                                 and res["assay_model"]["coverage90"] >= 0.75)
@@ -395,16 +416,17 @@ def run_all(batch_dir: Path, assay_path: Path | None, labels_path: Path, out_dir
     S = {"n_runs": df.groupby("condition")["run_id"].nunique().to_dict()}
     S["h1"] = {"MAIN_vs_PLACEBO": paired(rm, "MAIN", "PLACEBO", rng),
                "TRANSIENT_vs_PLACEBO": paired(rm, "TRANSIENT", "PLACEBO", rng)}
-    S["h2"] = h2(df, rng, n_perm=n_perm, n_boot=n_boot)
+    consts = data_dir / "stage2_constants.json"  # h1* fixed at Stage 2 (scripts/stage2.py)
+    h1_star = json.loads(consts.read_text())["h1_star"] if consts.exists() else 0.02  # prereg §9.2 default
+    S["h2"] = h2(df, rng, n_perm=n_perm, n_boot=n_boot, h1_star=h1_star)
     assay = None
     if assay_path and assay_path.exists():
         assay = pd.DataFrame([json.loads(x) for x in assay_path.read_text(encoding="utf-8").splitlines() if x])
-        assay["post_pro"] = [labels.get(f"assay:{t}", {}).get("p_pro", np.nan) >= 0.5 for t in assay["trial_id"]]
+        assay["post_pro"] = [judged(labels.get(f"assay:{t}", {}), "pro") for t in assay["trial_id"]]
         S["h4"] = h4(assay, rng, n_boot=n_boot)
     p = {"H1": S["h1"]["MAIN_vs_PLACEBO"].get("p_signflip"), "H2": S["h2"].get("k_nonseed_pro", {}).get("p_one_sided"),
          "H4": S.get("h4", {}).get("lrt_simple_vs_weibull", {}).get("p_value")}
-    avail = {k_: v for k_, v in p.items() if v is not None}
-    S["holm"] = dict(zip(avail, map(float, stats.holm(list(avail.values()))))) if avail else {}
+    S["holm"] = stats.holm_family(p)  # fixed family {H1, H2, H4}, prereg §9.6
     S["h3"] = h3(df, run_means(df, range(8, 11)), S["h2"], S.get("h4", {}), rng, n_boot=min(n_boot, 1000))
     power_path, sim_path = data_dir / "power.json", data_dir / "sim_params.json"
     ident = json.loads(power_path.read_text())["identifiability"]["passes_80pct"] if power_path.exists() else None

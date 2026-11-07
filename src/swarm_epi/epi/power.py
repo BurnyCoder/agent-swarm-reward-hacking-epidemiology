@@ -61,7 +61,7 @@ def simulate_family(name: str, params: list, n_runs: int, N: int, T: int, rng: n
 
 DEFAULT_PARAMS = {  # plausible shapes at N=32, T=10 (used when the pilot gives no fit for a family)
     "linear": [1.0, 1.5], "exponential": [1.0, 0.3], "logistic": [1.0, 0.8, 25.0], "gompertz": [1.0, 1.2, 0.4],
-    "ggm": [1.0, 0.8, 0.6], "bass": [1.0, 0.02, 0.8, 26.0],
+    "ggm": [1.0, 0.8, 0.6], "bass": [1.0, 0.02, 0.8, 26.0], "richards": [1.0, 0.8, 25.0, 3.0],
 }
 
 

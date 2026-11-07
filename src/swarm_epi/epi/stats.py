@@ -32,9 +32,9 @@ def compare_paired(a: np.ndarray, b: np.ndarray, sesoi: float = 0.10, rng: np.ra
     a, b = np.asarray(a, float), np.asarray(b, float)  # paired run-level values
     d = a - b  # paired differences
 
-    def signflip_p(x: np.ndarray) -> float:
+    def signflip_p(x: np.ndarray, alternative: str = "greater") -> float:
         res = stats.permutation_test((x, np.zeros_like(x)), lambda u, v, axis: np.mean(u - v, axis=axis),
-                                     permutation_type="samples", n_resamples=np.inf, alternative="greater",
+                                     permutation_type="samples", n_resamples=np.inf, alternative=alternative,
                                      vectorized=True)  # exact enumeration of all 2^n within-pair swaps
         return float(res.pvalue)
 
@@ -44,7 +44,8 @@ def compare_paired(a: np.ndarray, b: np.ndarray, sesoi: float = 0.10, rng: np.ra
            "p_welch": float(stats.ttest_ind(a, b, equal_var=False, alternative="greater").pvalue),
            "p_tost_paired": float(ttost_paired(a, b, -sesoi, sesoi)[0]),
            "p_tost_welch": float(ttost_ind(a, b, -sesoi, sesoi, usevar="unequal")[0]),
-           "p_two_sided_negative": float(stats.ttest_rel(a, b, alternative="less").pvalue),
+           "p_signflip_two_sided": signflip_p(d, "two-sided"),  # prereg §13: a significant NEGATIVE difference
+           # (two-sided p < 0.05 with diff < 0) is reported as contrary evidence
            "ci90_low": float(np.percentile(boots, 5)), "ci90_high": float(np.percentile(boots, 95)),
            "n_pairs": int(d.size), "mean_a": float(a.mean()), "mean_b": float(b.mean())}
     if covariate is not None:  # round-0-adjusted robustness
@@ -73,6 +74,14 @@ def compare_runs(a: np.ndarray, b: np.ndarray, sesoi: float = 0.10, rng: np.rand
 def holm(pvals) -> np.ndarray:
     """Holm-adjusted p-values (family-wise error control)."""
     return multipletests(np.asarray(pvals, float), method="holm")[1]
+
+
+def holm_family(pvals: dict[str, float | None], family: tuple[str, ...] = ("H1", "H2", "H4")) -> dict:
+    """Holm over the FIXED pre-registered family (prereg §9.6). A missing test enters with p = 1, which keeps m = 3
+    (conservative for the others) instead of silently shrinking the family; `family_complete` records it."""
+    vals = [1.0 if pvals.get(h) is None or not np.isfinite(pvals[h]) else float(pvals[h]) for h in family]
+    adj = dict(zip(family, map(float, holm(vals))))
+    return adj | {"family_complete": all(pvals.get(h) is not None for h in family)}
 
 
 def pmf_from_samples(samples: np.ndarray, support: int) -> np.ndarray:

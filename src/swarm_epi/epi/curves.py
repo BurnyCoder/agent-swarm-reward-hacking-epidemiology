@@ -4,6 +4,8 @@ Local context — models for cumulative count C(t) (closed forms):
 - linear       C = C0 + a t                                   (constant incidence; generalized-growth p=0)
 - exponential  C = C0 e^{rt}                                  (Ma et al. 2014, Bull Math Biol 76:245, Eq. 1)
 - logistic     C = K / (1 + (K/C0 - 1) e^{-rt})               (Ma et al. 2014 Eq. 3; SI closed form)
+- richards     C = K [1 + ((K/C0)^a - 1) e^{-a r t}]^{-1/a}    (Ma et al. 2014 Eqs. 4-5: C' = rC[1 - (C/K)^a];
+               a = 1 is the logistic; initial rate r0 = r[1 - (C0/K)^a])
 - gompertz     C = C0 exp((r/b)(1 - e^{-bt}))                 (integral of C' = r C e^{-bt})
 - ggm          C = [C0^{1-p} + (1-p) r t]^{1/(1-p)}           (generalized growth C' = r C^p; Viboud, Simonsen &
                                                                Chowell 2016, Epidemics 15:27; Chowell 2017 Eq. 1)
@@ -42,6 +44,12 @@ def _ggm(t, th):
     return np.power(np.maximum(c0 ** (1 - p) + (1 - p) * r * t, 0.0), 1 / (1 - p))
 
 
+def _richards(t, th):
+    c0, r, k, a = th  # initial size, rate, ceiling, shape exponent
+    base = 1 + ((k / c0) ** a - 1) * np.exp(-a * r * t)  # Ma et al. 2014 Eq. 5 denominator
+    return k * np.power(np.maximum(base, 1e-12), -1 / a)
+
+
 def _bass(t, th):
     c0, a, b, m = th  # initial adopters, innovation, imitation, ceiling
     e = np.exp(-(a + b) * t)  # decay term
@@ -56,6 +64,9 @@ MODELS = {
     "logistic": Model(lambda t, th: th[2] / (1 + (th[2] / th[0] - 1) * np.exp(-th[1] * t)), ("C0", "r", "K"),
                       lambda N: [(1e-3, N), (0, 10), (1e-3, N)],
                       lambda c0, N: [[max(c0, .5), 0.5, N * .8], [max(c0, .5), 1.5, N * .5]]),
+    "richards": Model(_richards, ("C0", "r", "K", "a"), lambda N: [(1e-3, N), (0, 10), (1e-3, N), (0.05, 10)],
+                      lambda c0, N: [[max(c0, .5), 0.8, N * .8, 1.0], [max(c0, .5), 1.5, N * .6, 0.5],
+                                     [max(c0, .5), 0.5, N * .9, 3.0]]),
     "gompertz": Model(lambda t, th: th[0] * np.exp(th[1] / th[2] * (1 - np.exp(-th[2] * t))), ("C0", "r", "b"),
                       lambda N: [(1e-3, N), (0, 10), (1e-3, 10)],
                       lambda c0, N: [[max(c0, .5), 0.8, 0.3], [max(c0, .5), 2.0, 0.8]]),
@@ -112,6 +123,16 @@ def fit(name: str, C: np.ndarray, N: int) -> CurveFit:
 def fit_all(C: np.ndarray, N: int) -> dict[str, CurveFit]:
     """Fit every growth model."""
     return {name: fit(name, C, N) for name in MODELS}
+
+
+def initial_rate(fit_: CurveFit) -> float:
+    """Identifiable initial growth rate r0 of a logistic or Richards fit (Ma et al. 2014, below Eq. 5).
+
+    Logistic: r0 = r (1 - C0/K); Richards: r0 = r [1 - (C0/K)^a] (logistic is a = 1).
+    """
+    p = fit_.params
+    a = p.get("a", 1.0)  # logistic has no shape parameter
+    return float(p["r"] * (1 - (p["C0"] / p["K"]) ** a))
 
 
 def doubling_time(r: float) -> float:

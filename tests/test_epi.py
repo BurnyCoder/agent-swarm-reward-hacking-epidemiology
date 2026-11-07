@@ -58,7 +58,18 @@ def test_growth_curve_selection_prefers_logistic_on_logistic_data():
         c.append(c[-1] + rng.binomial(N - c[-1], min(max(h, 0), 1)))
     fits = curves.fit_all(np.array(c), N)
     best = min(fits, key=lambda m: fits[m].aicc)
-    assert best in ("logistic", "bass", "ggm", "gompertz") and fits["linear"].aicc > fits["logistic"].aicc + 4
+    assert best in ("logistic", "richards", "bass", "ggm", "gompertz") and fits["linear"].aicc > fits["logistic"].aicc + 4
+
+
+def test_richards_closed_form_solves_its_ode_and_nests_logistic():
+    t = np.linspace(0, 10, 2001)
+    th = [2.0, 0.7, 30.0, 2.5]  # C0, r, K, a
+    c = curves.MODELS["richards"].f(t, th)
+    dc = np.gradient(c, t, edge_order=2)  # numerical derivative (second-order at the ends too)
+    assert np.allclose(dc, th[1] * c * (1 - (c / th[2]) ** th[3]), atol=1e-3)  # Ma et al. 2014 Eq. 4
+    assert np.allclose(curves.MODELS["richards"].f(t, [2.0, 0.7, 30.0, 1.0]), curves.MODELS["logistic"].f(t, th[:3]))
+    fit_ = curves.CurveFit("richards", dict(zip(("C0", "r", "K", "a"), th)), 0.0, 4, 10)
+    assert abs(curves.initial_rate(fit_) - 0.7 * (1 - (2 / 30) ** 2.5)) < 1e-12  # r0 = r[1 - (C0/K)^a]
 
 
 def test_transmission_map_derivative():
@@ -140,3 +151,16 @@ def test_paired_comparison():
     assert eq["p_tost_paired"] < 0.05
     pmf = stats.pmf_from_samples(np.array([3, 3, 4]), 5)
     assert abs(pmf.sum() - 1) < 1e-12 and stats.crps_star(pmf, 3) < stats.crps_star(pmf, 0)
+
+
+def test_holm_family_keeps_m_fixed_when_a_test_is_missing():
+    full = stats.holm_family({"H1": 0.01, "H2": 0.04, "H4": 0.30})
+    assert np.allclose([full["H1"], full["H2"], full["H4"]], [0.03, 0.08, 0.30]) and full["family_complete"]
+    part = stats.holm_family({"H1": 0.01, "H2": 0.04})  # assay missing: H4 enters as p = 1, m stays 3
+    assert np.allclose([part["H1"], part["H2"]], [0.03, 0.08]) and not part["family_complete"]
+
+
+def test_two_sided_signflip_detects_negative_difference():
+    a, b = np.full(10, 0.1), np.full(10, 0.3) + np.linspace(-0.01, 0.01, 10)  # MAIN clearly below PLACEBO
+    r = stats.compare_paired(a, b, rng=np.random.default_rng(0), n_boot=200)
+    assert r["diff"] < 0 and r["p_signflip"] > 0.99 and r["p_signflip_two_sided"] < 0.01  # exact: 2/2^10

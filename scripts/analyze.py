@@ -22,6 +22,6 @@ if __name__ == "__main__":
     args = ap.parse_args()
     summary = analysis.run_all(args.runs / args.batch, args.runs / "assay" / "assay.jsonl",
                                args.results / "post_labels.json", args.results)
-    print(json.dumps({k: summary[k] for k in ("n_runs", "holm", "epi_parameters")}, indent=1, default=float))
+    print(json.dumps({k: summary.get(k) for k in ("n_runs", "holm")}, indent=1, default=float))  # headline only
     print("figures:", figures.make_all(args.results))
     print("site:", site.build(args.results, Path("site")))  # private HF Space page
