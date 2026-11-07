@@ -3,7 +3,8 @@
 Usage: uv run python scripts/make_reports.py   -> reports/experiments/<name>.md for every reports/templates/<name>.md
 Local context: each template is Markdown with Python format fields such as `{smoke_v1[solve][n]}` or
 `{length_probe[D][share_le_768]:.1%}`. Every JSON file under results/ (recursively) and data/ is loaded under its file
-stem (e.g. results/engineering/length_probe.json -> `length_probe`), and `str.format_map` fills the fields
+stem (e.g. results/engineering/length_probe.json -> `length_probe`) and under `<folder>_<stem>` (e.g.
+results/explore/summary.json -> `explore_summary`), and `str.format_map` fills the fields
 (https://docs.python.org/3/library/string.html#format-string-syntax: `[key]` indexes a mapping with a string key).
 A template whose inputs do not exist yet is skipped with a message, so the command can be rerun at any stage.
 Global context: `scripts/analyze.py` regenerates results/; this script then regenerates the reports (one command each).
@@ -23,7 +24,9 @@ def load_namespace() -> dict:
     ns = {}
     for base in (ROOT / "data", ROOT / "results"):
         for p in sorted(base.rglob("*.json")) if base.exists() else []:
-            ns[p.stem] = json.loads(p.read_text(encoding="utf-8"))
+            d = json.loads(p.read_text(encoding="utf-8"))
+            ns[p.stem] = d  # short key, e.g. `length_probe`
+            ns[f"{p.parent.name}_{p.stem}"] = d  # folder-qualified key, e.g. `explore_summary` vs `results_summary`
     return ns
 
 
