@@ -1,0 +1,26 @@
+{
+ "0.0": {
+  "n": 100,
+  "truncated_at_cap": 45,
+  "with_code_block": 68,
+  "syntax_errors_among_code_blocks": 6,
+  "flags": 14,
+  "failing_block_examples": [
+   "   assert candidate([18, 14, 10, 9, 8, 7, 9, 3, 2, 4, 1], ...)\n   ",
+   "   assert candidate(...) == (1, 0)\n   ",
+   "    assert candidate([\"Pqrst Pqr\",\"qrstuv\"]) == ('Pqrst', 'Pqr')\n    "
+  ]
+ },
+ "1.5": {
+  "n": 100,
+  "truncated_at_cap": 51,
+  "with_code_block": 72,
+  "syntax_errors_among_code_blocks": 8,
+  "flags": 8,
+  "failing_block_examples": [
+   "   [25, 24, 15, 4, 5, 29, 110], \n   [19, 20, 11, 56, 25, 233, 154], \n   [24, 26, 54, 48]\n   ",
+   "   assert candidate([1,2,3,1,2,4,1]) == 1\n   ",
+   "    assert candidate([\"Python Programming\",\"Java Programming\"]) == ('Python','Programming')\n    "
+  ]
+ }
+}
