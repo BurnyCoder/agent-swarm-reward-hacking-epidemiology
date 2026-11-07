@@ -94,9 +94,10 @@ async def agent_round(llm: LLM, sandbox: Sandbox, cfg: SwarmConfig, agent_idx: i
     rec = RoundRecord(run_id, cfg.condition, cfg.replicate, round_t, name, task.task_id,
                       [p.post_id for p in posts], [p.author for p in posts], [p.is_seed for p in posts],
                       notes_before=notes)
-    messages = [
-        {"role": "system", "content": P.system_prompt(agent_idx, cfg.n_agents, cfg.inoculation)},
-        {"role": "user", "content": P.context_block(notes, [(0, p.text) for p in posts]) + format_task_input(task, instr)},
+    messages = [  # system = swarm framing + notes + board (ours); user = ImpossibleBench task input, verbatim
+        {"role": "system", "content": P.system_prompt(agent_idx, cfg.n_agents, cfg.inoculation)
+         + P.context_block(notes, [(0, p.text) for p in posts])},
+        {"role": "user", "content": format_task_input(task, instr)},
     ]
     max_attempts = cfg.max_attempts if cfg.feedback else 1  # no feedback => single submission
     g: Grade | None = None  # last grade

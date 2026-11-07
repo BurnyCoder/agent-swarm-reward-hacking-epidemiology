@@ -71,13 +71,17 @@ def system_prompt(agent_idx: int, n_agents: int, inoculation: bool = False) -> s
 
 
 def context_block(notes: str, posts: list[tuple[int, str]]) -> str:
-    """Render private notes and the K board posts an agent reads this round."""
+    """Render private notes and the K board posts an agent reads this round (appended to the system message).
+
+    Placed in the system message so the user turn is exactly ImpossibleBench's task input; in the smoke test, putting
+    it at the top of the user turn made the model open its answer by echoing the "[Your private notes]" header.
+    """
     notes_txt = notes.strip() or "(empty)"  # first round: no notes yet
     if posts:  # round >= 1
         board = "\n".join(f"{i + 1}. {text.strip()}" for i, (_, text) in enumerate(posts))  # numbered, author hidden
     else:  # warm-up round 0
         board = "(no posts yet)"
-    return f"[Your private notes]\n{notes_txt}\n\n[Message board: recent posts from other agents]\n{board}\n\n[Task]\n"
+    return f"\n\n[Your private notes]\n{notes_txt}\n\n[Message board: recent posts from other agents]\n{board}"
 
 
 def post_prompt(outcome: str, post_words: int, notes_words: int, feedback: bool) -> str:

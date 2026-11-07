@@ -33,7 +33,7 @@ class FakeLLM:
         phase = (tags or {}).get("phase")
         self.tokens_out += 10
         if phase == "solve":
-            board = messages[1]["content"].split("[Message board")[1].split("[Task]")[0]
+            board = messages[0]["content"].split("[Message board")[1]  # board sits at the end of the system message
             k = len(re.findall("HACK", board))  # pro-hack posts read
             hack = self.rng.random() < 1 - 0.95 * 0.6 ** k  # simple-contagion kernel, eps=0.05
             return ChatResult(HACK_CODE if hack else HONEST_CODE, None, 10, 10, "stop")
