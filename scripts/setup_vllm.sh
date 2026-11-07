@@ -23,6 +23,7 @@ UV="${UV:-$(command -v uv || echo "$HOME/.local/bin/uv")}"
 
 mkdir -p "$SWARM_ROOT/hf-cache" "$SWARM_ROOT/logs"  # HF cache + logs live next to the venv on ext4
 cd "$SWARM_ROOT"                                      # all relative paths below resolve inside SWARM_ROOT
+TS="$(date +%Y%m%dT%H%M%S)"                           # timestamp, so a re-run never overwrites the first install's logs
 
 # Create the venv with Python 3.12 (vLLM 0.33 supports 3.11-3.14 per its PyPI metadata `requires_python`).
 # `--seed` installs pip into the venv so tools that shell out to pip still work.
@@ -37,12 +38,12 @@ source vllm-env/bin/activate
 # the Windows driver 617.42 exposes CUDA 13.4 to WSL, which satisfies CUDA 13.0. torch>=2.7 cu128+ wheels
 # include sm_120 (Blackwell consumer) kernels, so no source build / nvcc is needed.
 # Source: https://docs.vllm.ai/en/latest/getting_started/installation/gpu.html ("uv pip install vllm --torch-backend=auto")
-"$UV" pip install "vllm==${VLLM_VERSION}" --torch-backend=auto 2>&1 | tee logs/install_vllm.log
+"$UV" pip install "vllm==${VLLM_VERSION}" --torch-backend=auto 2>&1 | tee "logs/install_vllm_${TS}.log"
 
 # Pre-download FlashInfer's precompiled kernels; without them they are JIT-compiled at first start,
 # "which can add several minutes on Hopper and newer GPUs, especially Blackwell". Non-fatal if it fails.
 # Source: https://docs.vllm.ai/en/latest/getting_started/installation/gpu.html (`vllm download-kernels`)
-vllm download-kernels 2>&1 | tee logs/download_kernels.log || echo "WARN: vllm download-kernels failed; kernels will JIT at start"
+vllm download-kernels 2>&1 | tee "logs/download_kernels_${TS}.log" || echo "WARN: vllm download-kernels failed; kernels will JIT at start"
 
 # Keep the HF cache on the WSL disk so the 4 GB checkpoint is read from ext4, not /mnt/c.
 # Source: https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhome
