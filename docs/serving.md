@@ -298,8 +298,10 @@ All tables below are printed by `summarize_serving.py` from the raw result files
    changed.
    - vLLM's startup profiler measured "peak activation" as 1.73 GiB in one start and 2.21 GiB in the next. Its
      CUDA-graph estimates were 0.54 and 1.04 GiB, for graphs that actually took 0.18 and 0.07 GiB.
-   - Cause: under WSL the profiler sees whole-GPU free memory, so GPU allocations by Windows apps during profiling are
-     billed to vLLM. Windows' own GPU use drifted between 720 and 1,710 MiB during this session.
+   - Likely cause (not verified): under WSL the profiler's memory readings are perturbed by GPU memory that Windows apps
+     allocate during profiling. Windows' own GPU use drifted between 720 and 1,710 MiB during this session. Note that
+     CUDA's reported free memory at startup was 6.71 GiB on all 11 pinned starts, while `nvidia-smi` showed 720–1,051 MiB
+     in use beforehand, so the exact mechanism is unclear (§8).
    - vLLM's own log points at the fix: `Replace gpu_memory_utilization config with --kv-cache-memory=...`.
    - **Fix:** pin `--kv-cache-memory-bytes 1342177280` (1.25 GiB, the size that had already run the full load). Repeat
      starts of the same config then reported identical capacity: B/E 17,106 tokens, C/J 45,056, G/final 32,336.
@@ -329,6 +331,107 @@ All tables below are printed by `summarize_serving.py` from the raw result files
 - The prefix cache is off, so prompt layout does not affect speed. Turning it on (`PREFIX_CACHE=1`) only makes sense if
   prompts start with an identical prefix of at least one block (≥ 300–1,100 tokens, depending on dtypes). That was not
   tested.
+
+## 8. Larger KV cache? (analysis from the logs above; no new server runs)
+
+**Decision (2026-11-07): kept 1.25 GiB for every pilot, assay and batch-1 run.** The expected gain at 1.75 GiB is +7–13% (unmeasured, ≈1.5–2 h of a ~17 h batch). The downside is an untested OOM or paging slowdown under WSL2 that could stall a multi-hour run. One fixed server configuration also keeps all phases comparable (§7). The analysis below is kept for later experiments.
+
+Question from the pilot: the swarm batch (55 runs, prompts ~1.5–3k tokens + ≤768 out) is estimated at ~17 h at ~340 gen tok/s
+and looks limited by the 1.25 GiB pool (~13 long sequences at once). Is a bigger `--kv-cache-memory-bytes` safe and worth it?
+
+**Memory budget** (MiB, from §5 `nvidia-smi` peaks).
+
+- vLLM's non-KV peak for a bf16-KV config is 4,247 MiB. Derivation: config B peaked at 6,569 with Windows at 1,042 before
+  start, so vLLM used 5,527 MiB, minus the 1,280 MiB KV pool. The final default server peaked at 6,322 total, consistent
+  with that. Activations are bounded by the 2,048-token prefill chunk and `--max-num-seqs 64`, so they should not grow
+  much with a larger pool.
+- Windows' own use with no vLLM running ranged 720–1,710 MiB: 1,710 at session start and 1,504 before the first server
+  start, then all 10 readings before the sweep starts at 720–1,051.
+
+| Pinned KV | Bytes for `KV_CACHE_BYTES` | Worst-case total (Windows 1,710) | Slack of 8,151 | Typical total (Windows ~900) |
+|---|---|---|---|---|
+| 1.25 GiB (current) | 1342177280 | 7,237 | 914 | 6,427 (pilot reads 6,420) |
+| 1.75 GiB | 1879048192 | 7,749 | 402 | 6,939 |
+| 2.0 GiB | 2147483648 | 8,005 | 146 | 7,195 |
+| 2.25 GiB | 2415919104 | 8,261 | **−110** | 7,451 |
+
+**1. Safe size.** I would go up to **2.0 GiB at most**, and only with the Windows desktop kept light (no browser video or
+other GPU apps during the batch). **1.75 GiB is the safer choice.** 2.25 GiB does not fit if Windows returns to its observed
+1,710 MiB. vLLM's startup guard is not a reliable protection here:
+
+- It checks CUDA free memory ≥ `gpu_memory_utilization` × total = 0.8 × 7.93 GiB (`vllm/v1/worker/utils.py`,
+  `request_memory`).
+- With `--kv-cache-memory-bytes` set it then reserves the pinned size and "does not respect the gpu_memory_utilization
+  config" (vLLM log).
+- Under WSL, CUDA reported 6.71 GiB free on every start regardless of what `nvidia-smi` showed.
+
+**What happens if Windows grabs more after startup: untested and undocumented for WSL2.** Two outcomes are possible:
+
+- A CUDA OOM in vLLM, which kills the engine; requests fail and the orchestrator must resume.
+- WDDM paging GPU allocations to system RAM, which shows up as a silent slowdown. On Windows, the NVIDIA driver's
+  "CUDA – Sysmem Fallback Policy" makes spilling the default. That is Windows-side behaviour; a forum report suggests WSL2
+  may differ, and anecdotal reports put the slowdown at 5–10× (sources below).
+
+Watch `nvidia-smi --query-gpu=memory.used` and vLLM's `Avg generation throughput` log lines; a sudden throughput drop with
+memory near 8,151 MiB means paging.
+
+**2. Expected gain: not measured at 1.75/2.0 GiB for the default config.** Closest measured points:
+
+- **Same dtype config, pool 0.79 → 1.25 GiB (×1.58):** max running 8 → 14; single-turn gen tok/s 219.5 → 257.5
+  (+17%; means of 2 and 4 runs). These are the fp8 / prefix-cache-on runs (sweep 1 at `--max-num-seqs 32`; the first server
+  and A at 64; neither cap was binding).
+- **Default config, queue depth 32 → 64 → 128 requests at a fixed pool:** 339 → 357 → 368 gen tok/s. The pool, not the
+  queue, is the limit.
+- **Cross-config, dtype-confounded:** 13 → 21 running (G → I) gave +21% single-turn and +15% agent loop, but I also uses
+  fp8 KV.
+
+Extrapolating the same-config elasticity (+17% for ×1.58, i.e. throughput ∝ pool^0.35); the lower bounds allow for
+diminishing returns:
+- **1.75 GiB (×1.4):** roughly **+7–13%** gen tok/s.
+- **2.0 GiB (×1.6):** roughly **+10–18%**, i.e. the ~17 h batch becomes ~14.5–15.5 h.
+
+The swarm load decodes more (≤768 out per call) and holds longer sequences than my 2k/400 test, so the real gain could be
+somewhat larger. Treat these as estimates until the check below is run.
+
+**3. Effect on outputs: none beyond batch-composition nondeterminism.**
+
+- The pool size does not change dtypes, kernels, CUDA-graph sizes (still up to 128) or the attention block size. The
+  block size is fixed by the KV/state dtypes, 272 tokens here.
+- It only changes how many sequences run together, which already varies with load. Fewer preemptions is the other effect,
+  and none were observed even at 1.25 GiB.
+- Testable prediction: at batch size 1 the bigger-pool server gives **bit-identical** probe logprobs and greedy text to
+  the 1.25 GiB server.
+- If you switch, do it between pilot phases, before the confirmatory assay and swarms, and keep it fixed afterwards.
+  Record `KV_CACHE_BYTES` with the run metadata.
+
+**4. Command and check (~4 min, ~6 with `--loop`).** Inside WSL, between pilot phases:
+
+```bash
+pkill -f "[v]llm serve"; sleep 5; nvidia-smi --query-gpu=memory.used --format=csv,noheader   # Windows idle MiB
+KV_CACHE_BYTES=1879048192 bash scripts/serve_vllm.sh   # 1.75 GiB; or 2147483648 for 2.0 GiB (~67 s warm start)
+bash <notes>/serving/kv_resize_check.sh [--loop]      # in another WSL shell once "Application startup complete."
+```
+
+`kv_resize_check.sh` (shared notes folder, `serving/`) prints, in order:
+
+1. The pinned size, the block size (expect **272**) and the KV token count. Predicted ~45k for 1.75 GiB and ~52k for 2.0
+   GiB, vs 32,336 now.
+2. The smoke tests and 32-concurrent throughput (baseline 340.0 / 338.0 gen tok/s). With `--loop`, the agent loop as well
+   (baseline 222.4).
+3. Peak `nvidia-smi` memory during the load.
+4. The batch-size-1 fidelity comparison against the 1.25 GiB default records (expect 0.0 / 0.0, 24/24 greedy identical).
+
+**Keep the bigger pool only if all hold:** the block size is still 272, throughput beats the baseline by more than the ~4%
+restart-to-restart variation, peak memory stays ≤ ~7,900 MiB, and fidelity is bit-identical. Otherwise restart with the
+default (`KV_CACHE_BYTES` unset = 1.25 GiB). The check script was written after the sweeps and has not been run end to end;
+its component commands were all used for §5.
+
+Sources for this section: vLLM `kv_cache_memory_bytes` and `request_memory` code in the installed 0.33.0 package
+(`vllm/v1/worker/gpu_worker.py`, `vllm/v1/worker/utils.py`); NVIDIA forum threads on WDDM paging and WSL memory
+([cudaMalloc with sysmem fallback](https://forums.developer.nvidia.com/t/cudamalloc-with-sysmem-fallback/347791),
+[GPU memory vs dedicated GPU memory in WSL](https://forums.developer.nvidia.com/t/gpu-memory-vs-dedicated-gpu-memory-support-in-wsl/315236));
+anecdotal slowdown figure from [runaihome.com](https://runaihome.com/blog/shared-gpu-memory-slow-local-ai-sysmem-fallback-fix-2026/)
+(commercial blog, unverified).
 
 ## Artifacts
 
