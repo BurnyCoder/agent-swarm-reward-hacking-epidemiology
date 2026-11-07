@@ -41,11 +41,14 @@ from .tasks import Task  # tasks
 log = logging.getLogger("swarm_epi.pilot")  # module logger
 
 
-async def _resumable_map(items: dict[str, Any], fn: Callable[[str, Any], Awaitable[Any]], ckpt: Path) -> dict[str, Any]:
+async def _resumable_map(items: dict[str, Any], fn: Callable[[str, Any], Awaitable[Any]], ckpt: Path,
+                         limit: int = 48) -> dict[str, Any]:
     """Await `fn(key, item)` for every item whose key is not yet in the JSONL checkpoint; append each result on finish.
 
     Long pilot phases (the capability pass is ~2 h) restart where they stopped after a crash or reboot. Each append
     is synchronous inside one event loop (no await between open and write), so concurrent coroutines never interleave.
+    At most `limit` items run at once: with everything started together, an item's second LLM call (the retry) queues
+    behind every other item's first call, so items would only finish near the end and the checkpoint would be empty.
     """
     done: dict[str, Any] = {}  # key -> result, from earlier (interrupted) invocations
     if ckpt.exists():
@@ -55,8 +58,11 @@ async def _resumable_map(items: dict[str, Any], fn: Callable[[str, Any], Awaitab
                 done[d["key"]] = d["value"]
     log.info("%s: %d/%d items already done", ckpt.name, sum(k in done for k in items), len(items))
 
+    gate = asyncio.Semaphore(limit)  # bounded number of items in flight -> items complete progressively
+
     async def run(key: str, item: Any) -> None:
-        value = await fn(key, item)  # the expensive part (LLM + sandbox)
+        async with gate:
+            value = await fn(key, item)  # the expensive part (LLM + sandbox)
         with open(ckpt, "a", encoding="utf-8") as fh:  # noqa: ASYNC230 - tiny synchronous append keeps writes atomic
             fh.write(json.dumps({"key": key, "value": value}, ensure_ascii=False) + "\n")
         done[key] = value
@@ -110,7 +116,8 @@ async def capability_pass(llm: LLM, sandbox: Sandbox, tasks: list[Task], out_pat
         return sum(r.strict_original_pass for r in recs)  # strict passes count
 
     ckpt = out_path.with_suffix(".partial.jsonl")  # resumable progress file, removed when the pass completes
-    counts = await _resumable_map({t.task_id: (i, t) for i, t in enumerate(possible)}, one, ckpt)  # all tasks
+    counts = await _resumable_map({t.task_id: (i, t) for i, t in enumerate(possible)}, one, ckpt,
+                                  limit=12)  # 12 tasks x 5 samples in flight keeps the 48-request cap saturated
     out_path.write_text(json.dumps(counts, indent=1), encoding="utf-8")  # frozen filter file
     ckpt.unlink()  # the frozen file now holds every count
     log.info("capability: %d/%d tasks pass >=4/5", sum(v >= 4 for v in counts.values()), len(counts))
