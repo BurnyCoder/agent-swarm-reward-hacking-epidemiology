@@ -89,8 +89,11 @@ async def main(args: argparse.Namespace) -> None:
                       echo=not args.quiet)
         await pilot.capability_pass(llm, sandbox, all_tasks, cap)
     elif args.phase == "pools":
-        if (DATA / "pools.json").exists():  # candidates exist: re-apply thresholds + manual check only
-            pilot.finalize_pools(DATA / "pools.json")
+        pools_path = DATA / "pools.json"
+        if pools_path.exists() and read_json("pools.json").get("placebo_source") != "tips":  # deviation #14
+            await pilot.rebuild_placebo_as_tips(llm, pools_path, n=args.n or 300)
+        elif pools_path.exists():  # candidates exist: re-apply thresholds + manual check only
+            pilot.finalize_pools(pools_path)
         else:
             await pilot.build_pools(llm, sandbox, tasks, DATA / "pools.json", n=args.n or 300)
     elif args.phase == "calibrate":

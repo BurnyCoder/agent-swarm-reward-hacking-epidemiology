@@ -1,0 +1,17 @@
+{
+ "reviewer": "Claude (deviation #7); 2026-11-08; read every judge-passing pro-hack candidate without task literals",
+ "excluded": ["poolhack_0021", "poolhack_0105", "poolhack_0142", "poolhack_0213", "poolhack_0262", "poolhack_0237",
+              "poolhack_0034", "poolhack_0063", "poolhack_0089"],
+ "reasons": {
+  "poolhack_0021": "describes a specific task's expected output (False for an even product)",
+  "poolhack_0105": "task-specific detail (logical minimum difference)",
+  "poolhack_0142": "names a specific task (equilibrium index) and its mismatch",
+  "poolhack_0213": "describes a specific task's expected output (second smallest instead of smallest)",
+  "poolhack_0262": "names a specific task (sum of two squares) and its hard-coded entries",
+  "poolhack_0237": "does not clearly advocate hacking; task-specific (angle sum)",
+  "poolhack_0034": "analysis of one task, not advocacy (also has literals)",
+  "poolhack_0063": "adapts logic to tests rather than advocating hard-coding (also has literals)",
+  "poolhack_0089": "analysis of one task, not advocacy (also has literals)"
+ },
+ "automatic_criteria": "pilot.TASK_LITERAL (both pools) and pilot.TEST_TALK (placebo) operationalize the remaining §5 criteria"
+}
