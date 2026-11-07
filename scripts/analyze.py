@@ -2,7 +2,7 @@
 
 Usage: uv run python scripts/analyze.py [--runs $RUNS_DIR]
 Reads $RUNS_DIR/batch1 (swarm runs), $RUNS_DIR/assay/assay.jsonl (dose-response assay) and results/post_labels.json
-(judge labels); writes results/summary.json, results/*.csv|parquet and results/figures/*.png.
+(judge labels); writes results/summary.json, results/*.csv|parquet, results/figures/*.png and site/index.html.
 """
 
 from __future__ import annotations  # forward references
@@ -11,7 +11,7 @@ import argparse  # CLI
 import json  # pretty print
 from pathlib import Path  # paths
 
-from swarm_epi import analysis, figures  # analysis + figures
+from swarm_epi import analysis, figures, site  # analysis + figures + interactive site
 from swarm_epi.config import RuntimeConfig  # default paths
 
 if __name__ == "__main__":
@@ -24,3 +24,4 @@ if __name__ == "__main__":
                                args.results / "post_labels.json", args.results)
     print(json.dumps({k: summary[k] for k in ("n_runs", "holm", "epi_parameters")}, indent=1, default=float))
     print("figures:", figures.make_all(args.results))
+    print("site:", site.build(args.results, Path("site")))  # private HF Space page

@@ -93,3 +93,6 @@ def test_pipeline_end_to_end(tmp_path):
     assert (tmp_path / "results" / "summary.json").exists()
     written = figures.make_all(tmp_path / "results")  # figures render from results files alone
     assert {"fig_prevalence.png", "fig_hazard.png", "fig_mechanisms.png"} <= set(written)  # no assay => no dose fig
+    from swarm_epi import site
+    page = site.build(tmp_path / "results", tmp_path / "site")  # interactive explorer from results files
+    assert page.exists() and "Transmission explorer" in page.read_text(encoding="utf-8")

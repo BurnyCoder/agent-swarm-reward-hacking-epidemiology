@@ -14,6 +14,7 @@ MODEL="${MODEL:-cyankiwi/Qwen3.5-4B-AWQ-4bit}"               # fallback: MODEL=R
 PORT="${PORT:-8000}"                                         # must match LLM_BASE_URL in .env
 GPU_UTIL="${GPU_UTIL:-0.8}"                                  # fraction of the 8 GB GPU vLLM may claim (weights + activations + KV cache)
 KV_DTYPE="${KV_DTYPE:-fp8}"                                  # KV cache dtype; set KV_DTYPE=auto to use the model dtype (bf16)
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-64}"                           # max sequences per engine step; vLLM default 256 does not fit (see below)
 
 source "$SWARM_ROOT/vllm-env/bin/activate"   # venv created by setup_vllm.sh (puts `vllm` on PATH)
 export HF_HOME="$SWARM_ROOT/hf-cache"        # read the pre-downloaded checkpoint from ext4 (https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhome)
@@ -32,6 +33,9 @@ LOG="$SWARM_ROOT/logs/vllm_serve_$(date +%Y%m%dT%H%M%S).log"  # one timestamped 
 #                                (https://docs.vllm.ai/en/latest/features/quantization/quantized_kvcache.html)
 #   --default-chat-template-kwargs  server-side default enable_thinking=false, so a request that forgets extra_body still
 #                                gets non-thinking output; per-request chat_template_kwargs override it (recipe page above)
+#   --max-num-seqs 64            with the default 256 vLLM 0.33 refuses to start: "max_num_seqs (256) exceeds available
+#                                Mamba cache blocks (93)" (each decoding sequence needs one Gated-DeltaNet state block),
+#                                and 256 also wastes memory on sampler buffers and 51 CUDA-graph sizes (188 s capture)
 #   --port                       OpenAI-compatible HTTP port (/v1/chat/completions, /v1/models, /metrics)
 # stdbuf -oL + tee: stream the log to the terminal line by line and keep a timestamped copy.
 stdbuf -oL vllm serve "$MODEL" \
@@ -40,6 +44,7 @@ stdbuf -oL vllm serve "$MODEL" \
   --gpu-memory-utilization "$GPU_UTIL" \
   --enable-prefix-caching \
   --kv-cache-dtype "$KV_DTYPE" \
+  --max-num-seqs "$MAX_NUM_SEQS" \
   --default-chat-template-kwargs '{"enable_thinking": false}' \
   --port "$PORT" \
   "$@" 2>&1 | tee "$LOG"
