@@ -1,0 +1,389 @@
+# Bibliography for paper.typ in Hayagriva YAML (Typst's native bibliography format:
+# https://github.com/typst/hayagriva/blob/main/docs/file-format.md).
+# Every entry and link is taken from reports/literature_review.md, where each source was opened and checked.
+# A title is given only where the literature review states it; other entries are identified by authors, venue,
+# identifier and URL so that no title is reconstructed from memory. Entries without a URL are sources the literature
+# review names but does not link (see its section 6).
+
+hu2026:
+  type: article
+  author: [Hu, Ghahremani, Aghajani, Pasupuleti, Bhattacharjee]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2610.12822 (poster, NeurIPS 2026 workshop “Who Verifies the Agents?”)"}
+  url: https://arxiv.org/abs/2610.12822
+muralimohan2026:
+  type: article
+  title: "When Verification Becomes a Training Signal: Reward-Hacking Propagation in Multi-Agent Systems"
+  author: [Muralimohan, Patil, Desai, Nguyen, Shrivastava]
+  date: 2026
+  parent: {type: periodical, title: "NeurIPS 2026 workshop posters (abstract)"}
+  url: https://neurips.cc/virtual/2026/168273
+paglieri2026:
+  type: article
+  author: [Paglieri, Cross, Genewein, Leibo, Tomasev, Vezhnevets]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2609.04170"}
+  url: https://arxiv.org/abs/2609.04170
+papadopoulos2026:
+  type: article
+  author: [Papadopoulos, Shah, Zimmerman, Lindsey]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2608.10218 (“Mind Viruses”)"}
+  url: https://arxiv.org/abs/2608.10218
+wu2026:
+  type: article
+  author: [Wu, Ying, Wu, Zheng, Cheng, Shi, Guo]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2609.18460"}
+  url: https://arxiv.org/abs/2609.18460
+torpmann2026:
+  type: article
+  author: [Torpmann-Hagen, Schwall, Moonen]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2610.00430 (“Memetic Trojans”)"}
+  url: https://arxiv.org/abs/2610.00430
+weckbecker2026:
+  type: article
+  author: [Weckbecker, Müller, Hagag, Mulet]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2603.00131 (“Thought Virus”)"}
+  url: https://arxiv.org/abs/2603.00131
+li2026moltbook:
+  type: article
+  title: "The Moltbook Illusion"
+  author: [Li]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2602.07432"}
+  url: https://arxiv.org/abs/2602.07432
+benchaabane2026:
+  type: article
+  author: [Ben chaabane, Herath, Shrestha]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2606.06665"}
+  url: https://arxiv.org/abs/2606.06665
+lilizhou2026:
+  type: article
+  author: [Li, Li, Zhou]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2602.14299"}
+  url: https://arxiv.org/abs/2602.14299
+gautam2026:
+  type: article
+  author: ["Gautam et al."]
+  date: 2026
+  parent: {type: periodical, title: "arXiv:2605.13860 (Moltbook Observatory Archive)"}
+  url: https://arxiv.org/abs/2605.13860
+gu2024:
+  type: article
+  author: ["Gu et al."]
+  date: 2024
+  parent: {type: periodical, title: "ICML 2024, PMLR 235:16647–16672; arXiv:2402.08567 (“Agent Smith”)"}
+  url: https://arxiv.org/abs/2402.08567
+lee2024:
+  type: article
+  author: [Lee, Tiwari]
+  date: 2024
+  parent: {type: periodical, title: "arXiv:2410.07283 (“Prompt Infection”)"}
+  url: https://arxiv.org/abs/2410.07283
+cohen2024:
+  type: article
+  author: [Cohen, Bitton, Nassi]
+  date: 2024
+  parent: {type: periodical, title: "arXiv:2403.02817 (“Morris II”)"}
+  url: https://arxiv.org/abs/2403.02817
+ju2024:
+  type: article
+  author: ["Ju et al."]
+  date: 2024
+  parent: {type: periodical, title: "arXiv:2407.07791"}
+  url: https://arxiv.org/abs/2407.07791
+yu2024:
+  type: article
+  author: ["Yu et al."]
+  date: 2024
+  parent: {type: periodical, title: "Findings of ACL 2025; arXiv:2410.15686 (“NetSafe”)"}
+  url: https://arxiv.org/abs/2410.15686
+yang2024:
+  type: article
+  author: ["Yang et al."]
+  date: 2024
+  parent: {type: periodical, title: "arXiv:2411.11581 (“OASIS”)"}
+  url: https://arxiv.org/abs/2411.11581
+ashery2025:
+  type: article
+  author: [Ashery, Aiello, Baronchelli]
+  date: 2025
+  parent: {type: periodical, title: "Science Advances", volume: 11, issue: 20}
+  page-range: eadu9368
+  url: https://doi.org/10.1126/sciadv.adu9368
+zhong2025:
+  type: article
+  author: [Zhong, Raghunathan, Carlini]
+  date: 2025
+  parent: {type: periodical, title: "ICLR 2026 poster; arXiv:2510.20270 (“ImpossibleBench”)"}
+  url: https://arxiv.org/abs/2510.20270
+impossiblebenchcode:
+  type: repository
+  title: "safety-research/impossiblebench (MIT license)"
+  date: 2025
+  url: https://github.com/safety-research/impossiblebench
+mbppimpossible:
+  type: web
+  title: "AlignmentResearch/mbpp-honeypot-impossible-oneoff (dataset, CC-BY-4.0)"
+  url: https://huggingface.co/datasets/AlignmentResearch/mbpp-honeypot-impossible-oneoff
+austin2021:
+  type: article
+  author: ["Austin et al."]
+  date: 2021
+  parent: {type: periodical, title: "arXiv:2108.07732 (MBPP)"}
+  url: https://arxiv.org/abs/2108.07732
+taylor2025:
+  type: article
+  author: ["Taylor et al."]
+  date: 2025
+  parent: {type: periodical, title: "arXiv:2508.17511 (“School of Reward Hacks”)"}
+  url: https://arxiv.org/abs/2508.17511
+sorhdata:
+  type: web
+  title: "longtermrisk/school-of-reward-hacks (dataset, CC-BY-4.0)"
+  url: https://huggingface.co/datasets/longtermrisk/school-of-reward-hacks
+macdiarmid2025:
+  type: article
+  author: ["MacDiarmid et al."]
+  date: 2025
+  parent: {type: periodical, title: "arXiv:2511.18397"}
+  url: https://arxiv.org/abs/2511.18397
+pan2024:
+  type: article
+  author: [Pan, Jones, Jagadeesan, Steinhardt]
+  date: 2024
+  parent: {type: periodical, title: "ICML 2024, PMLR 235:39154–39200; arXiv:2402.06627"}
+  url: https://arxiv.org/abs/2402.06627
+gabor2025:
+  type: article
+  author: [Gabor, Lynch, Rosenfeld]
+  date: 2025
+  parent: {type: periodical, title: "arXiv:2511.21654 (“EvilGenie”)"}
+  url: https://arxiv.org/abs/2511.21654
+metr2025:
+  type: article
+  author: [Von Arx, Chan, Barnes]
+  date: 2025-06-05
+  parent: {type: periodical, title: "METR blog"}
+  url: https://metr.org/blog/2025-06-05-recent-reward-hacking/
+qwen35card:
+  type: web
+  title: "Qwen/Qwen3.5-4B model card (Apache-2.0)"
+  url: https://huggingface.co/Qwen/Qwen3.5-4B
+qwen35awq:
+  type: web
+  title: "cyankiwi/Qwen3.5-4B-AWQ-4bit (Apache-2.0)"
+  url: https://huggingface.co/cyankiwi/Qwen3.5-4B-AWQ-4bit
+britton2018:
+  type: article
+  title: "Basic stochastic transmission models and their inference"
+  author: [Britton]
+  date: 2018
+  parent: {type: periodical, title: "arXiv:1801.09594"}
+  url: https://arxiv.org/abs/1801.09594
+bass1969:
+  type: article
+  title: "A New Product Growth for Model Consumer Durables"
+  author: [Bass]
+  date: 1969
+  parent: {type: periodical, title: "Management Science", volume: 15, issue: 5}
+  page-range: 215–227
+  url: https://doi.org/10.1287/mnsc.15.5.215
+ma2014:
+  type: article
+  title: "Estimating initial epidemic growth rates"
+  author: [Ma, Dushoff, Bolker, Earn]
+  date: 2014
+  parent: {type: periodical, title: "Bulletin of Mathematical Biology", volume: 76, issue: 1}
+  page-range: 245–260
+  url: https://doi.org/10.1007/s11538-013-9918-2
+chowell2017:
+  type: article
+  author: [Chowell]
+  date: 2017
+  parent: {type: periodical, title: "Infectious Disease Modelling", volume: 2, issue: 3}
+  page-range: 379–398
+  url: https://doi.org/10.1016/j.idm.2017.08.001
+viboud2016:
+  type: article
+  author: [Viboud, Simonsen, Chowell]
+  date: 2016
+  parent: {type: periodical, title: "Epidemics", volume: 15}
+  page-range: 27–37
+  url: https://doi.org/10.1016/j.epidem.2016.01.002
+tjorve2017:
+  type: article
+  author: [Tjørve, Tjørve]
+  date: 2017
+  parent: {type: periodical, title: "PLoS ONE", volume: 12, issue: 6}
+  page-range: e0178691
+  url: https://doi.org/10.1371/journal.pone.0178691
+wallinga2007:
+  type: article
+  author: [Wallinga, Lipsitch]
+  date: 2007
+  parent: {type: periodical, title: "Proceedings of the Royal Society B", volume: 274, issue: 1609}
+  page-range: 599–604
+  url: https://doi.org/10.1098/rspb.2006.3754
+cori2013:
+  type: article
+  author: [Cori, Ferguson, Fraser, Cauchemez]
+  date: 2013
+  parent: {type: periodical, title: "American Journal of Epidemiology", volume: 178, issue: 9}
+  page-range: 1505–1512
+  url: https://doi.org/10.1093/aje/kwt133
+wallingateunis2004:
+  type: article
+  author: [Wallinga, Teunis]
+  date: 2004
+  parent: {type: periodical, title: "American Journal of Epidemiology", volume: 160, issue: 6}
+  page-range: 509–516
+  url: https://doi.org/10.1093/aje/kwh255
+lloydsmith2005:
+  type: article
+  author: [Lloyd-Smith, Schreiber, Kopp, Getz]
+  date: 2005
+  parent: {type: periodical, title: "Nature", volume: 438, issue: 7066}
+  page-range: 355–359
+  url: https://doi.org/10.1038/nature04153
+centolamacy2007:
+  type: article
+  title: "Complex contagions and the weakness of long ties"
+  author: [Centola, Macy]
+  date: 2007
+  parent: {type: periodical, title: "American Journal of Sociology", volume: 113, issue: 3}
+  page-range: 702–734
+  url: https://doi.org/10.1086/521848
+centola2010:
+  type: article
+  title: "The spread of behavior in an online social network experiment"
+  author: [Centola]
+  date: 2010
+  parent: {type: periodical, title: "Science", volume: 329, issue: 5996}
+  page-range: 1194–1197
+  url: https://doi.org/10.1126/science.1185231
+romero2011:
+  type: article
+  author: [Romero, Meeder, Kleinberg]
+  date: 2011
+  parent: {type: periodical, title: "Proceedings of WWW 2011"}
+  page-range: 695–704
+  url: https://doi.org/10.1145/1963405.1963503
+monsted2017:
+  type: article
+  author: [Mønsted, Sapieżyński, Ferrara, Lehmann]
+  date: 2017
+  parent: {type: periodical, title: "PLOS ONE", volume: 12, issue: 9}
+  page-range: e0184148
+  url: https://doi.org/10.1371/journal.pone.0184148
+hodas2014:
+  type: article
+  title: "The simple rules of social contagion"
+  author: [Hodas, Lerman]
+  date: 2014
+  parent: {type: periodical, title: "Scientific Reports", volume: 4}
+  page-range: "4343"
+  url: https://doi.org/10.1038/srep04343
+epabmds:
+  type: report
+  title: "Benchmark Dose Software (BMDS) 3.2 User Guide"
+  author: [U.S. Environmental Protection Agency]
+  date: 2020
+  url: https://19january2021snapshot.epa.gov/sites/static/files/2018-09/documents/bmds_3.0_user_guide.pdf
+faowho2003:
+  type: report
+  title: "Hazard Characterization for Pathogens in Food and Water (Microbiological Risk Assessment Series No. 3)"
+  author: [FAO/WHO]
+  date: 2003
+  url: https://www.fao.org/4/y4666e/y4666e0b.htm
+dodds2004:
+  type: article
+  title: "Universal behavior in a generalized model of contagion"
+  author: [Dodds, Watts]
+  date: 2004
+  parent: {type: periodical, title: "Physical Review Letters", volume: 92, issue: 21}
+  page-range: "218701"
+  url: https://doi.org/10.1103/PhysRevLett.92.218701
+burnham2004:
+  type: article
+  author: [Burnham, Anderson]
+  date: 2004
+  parent: {type: periodical, title: "Sociological Methods & Research", volume: 33, issue: 2}
+  page-range: 261–304
+  url: https://doi.org/10.1177/0049124104268644
+hurvich1989:
+  type: article
+  author: [Hurvich, Tsai]
+  date: 1989
+  parent: {type: periodical, title: "Biometrika", volume: 76, issue: 2}
+  page-range: 297–307
+  url: https://doi.org/10.1093/biomet/76.2.297
+sugiura1978:
+  type: article
+  author: [Sugiura]
+  date: 1978
+  parent: {type: periodical, title: "Communications in Statistics – Theory and Methods", volume: 7, issue: 1}
+  page-range: 13–26
+  url: https://doi.org/10.1080/03610927808827599
+field2007:
+  type: article
+  title: "Bootstrapping clustered data"
+  author: [Field, Welsh]
+  date: 2007
+  parent: {type: periodical, title: "Journal of the Royal Statistical Society B", volume: 69, issue: 3}
+  page-range: 369–390
+  url: https://doi.org/10.1111/j.1467-9868.2007.00593.x
+cameron2008:
+  type: article
+  author: [Cameron, Gelbach, Miller]
+  date: 2008
+  parent: {type: periodical, title: "Review of Economics and Statistics", volume: 90, issue: 3}
+  page-range: 414–427
+  url: https://doi.org/10.1162/rest.90.3.414
+holm1979:
+  type: article
+  author: [Holm]
+  date: 1979
+  parent: {type: periodical, title: "JSTOR stable URL"}
+  url: https://www.jstor.org/stable/4615733
+statsmodelscloglog:
+  type: web
+  title: "statsmodels documentation: statsmodels.genmod.families.links.CLogLog"
+  url: https://www.statsmodels.org/stable/generated/statsmodels.genmod.families.links.CLogLog.html
+gneiting2007:
+  type: article
+  author: [Gneiting, Raftery]
+  date: 2007
+schuirmann1987:
+  type: article
+  author: [Schuirmann]
+  date: 1987
+lakens2017:
+  type: article
+  author: [Lakens]
+  date: 2017
+welch1947:
+  type: article
+  author: [Welch]
+  date: 1947
+cohen1960:
+  type: article
+  author: [Cohen]
+  date: 1960
+landis1977:
+  type: article
+  author: [Landis, Koch]
+  date: 1977
+prentice1978:
+  type: article
+  author: [Prentice, Gloeckler]
+  date: 1978
+allison1982:
+  type: article
+  author: [Allison]
+  date: 1982
