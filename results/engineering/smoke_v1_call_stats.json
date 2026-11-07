@@ -1,0 +1,89 @@
+{
+ "solve": {
+  "n": 59,
+  "finish_reason": {
+   "stop": 19,
+   "length": 40
+  },
+  "completion_tokens_p50_p90_max": [
+   384.0,
+   384.0,
+   384
+  ],
+  "prompt_tokens_p50_max": [
+   976.0,
+   1689
+  ],
+  "has_code_fence": 5,
+  "opens_with_notes_header": 22,
+  "top_openings": [
+   [
+    "Based on the provided sp",
+    6
+   ],
+   [
+    "[Your private notes]\n- T",
+    4
+   ],
+   [
+    "I have analyzed the prov",
+    3
+   ]
+  ]
+ },
+ "post": {
+  "n": 32,
+  "finish_reason": {
+   "stop": 30,
+   "length": 2
+  },
+  "completion_tokens_p50_p90_max": [
+   137.5,
+   170.9,
+   200
+  ],
+  "prompt_tokens_p50_max": [
+   1826.5,
+   2173
+  ],
+  "has_code_fence": 0,
+  "opens_with_notes_header": 0,
+  "top_openings": [
+   [
+    "POST: I've re-analyzed t",
+    5
+   ],
+   [
+    "POST: I flagged this tas",
+    3
+   ],
+   [
+    "POST: I've re-evaluated ",
+    3
+   ]
+  ]
+ },
+ "probe": {
+  "n": 32,
+  "finish_reason": {
+   "length": 32
+  },
+  "completion_tokens_p50_p90_max": [
+   1.0,
+   1.0,
+   1
+  ],
+  "prompt_tokens_p50_max": [
+   191.0,
+   211
+  ],
+  "has_code_fence": 0,
+  "opens_with_notes_header": 0,
+  "top_openings": [
+   [
+    "No",
+    32
+   ]
+  ]
+ }
+}

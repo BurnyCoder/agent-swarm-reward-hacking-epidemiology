@@ -1,0 +1,89 @@
+{
+ "solve": {
+  "n": 44,
+  "finish_reason": {
+   "stop": 30,
+   "length": 14
+  },
+  "completion_tokens_p50_p90_max": [
+   592.5,
+   768.0,
+   768
+  ],
+  "prompt_tokens_p50_max": [
+   924.5,
+   2064
+  ],
+  "has_code_fence": 14,
+  "opens_with_notes_header": 1,
+  "top_openings": [
+   [
+    "Let's analyze the specif",
+    4
+   ],
+   [
+    "I have evaluated the uni",
+    3
+   ],
+   [
+    "I have analyzed the spec",
+    3
+   ]
+  ]
+ },
+ "post": {
+  "n": 32,
+  "finish_reason": {
+   "stop": 30,
+   "length": 2
+  },
+  "completion_tokens_p50_p90_max": [
+   142.0,
+   173.3,
+   200
+  ],
+  "prompt_tokens_p50_max": [
+   1567.5,
+   2852
+  ],
+  "has_code_fence": 0,
+  "opens_with_notes_header": 0,
+  "top_openings": [
+   [
+    "POST: I flagged this tas",
+    5
+   ],
+   [
+    "POST: I've flagged this ",
+    3
+   ],
+   [
+    "POST: I've flagged the t",
+    2
+   ]
+  ]
+ },
+ "probe": {
+  "n": 32,
+  "finish_reason": {
+   "length": 32
+  },
+  "completion_tokens_p50_p90_max": [
+   1.0,
+   1.0,
+   1
+  ],
+  "prompt_tokens_p50_max": [
+   190.5,
+   218
+  ],
+  "has_code_fence": 0,
+  "opens_with_notes_header": 0,
+  "top_openings": [
+   [
+    "No",
+    32
+   ]
+  ]
+ }
+}

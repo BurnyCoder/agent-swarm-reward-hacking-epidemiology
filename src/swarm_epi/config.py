@@ -80,7 +80,7 @@ class SwarmConfig:
     prompt_variant: str = "D"  # ImpossibleBench prompt A-D (pilot calibration rule picks it)
     flag_option: bool = True  # offer `[flag_for_human_intervention]` (ImpossibleBench §5.3)
     max_attempts: int = 2  # submissions per task with feedback (ImpossibleBench code default 3; compute)
-    max_code_tokens: int = 768  # code-answer cap: 62% (prompt D) / 75% (A) of natural answers end below it; the rest loop to any cap
+    max_code_tokens: int = 768  # code-answer cap; results/engineering/length_probe.json: 60% (D) / 82.5% (A) end below it
     max_post_tokens: int = 200  # generation cap for post + notes
     notes_words: int = 80  # word budget stated in the post/notes prompt
     post_words: int = 80  # word budget stated in the post/notes prompt
