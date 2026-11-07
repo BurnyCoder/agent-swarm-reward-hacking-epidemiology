@@ -80,12 +80,18 @@ def _summ(g: Grade, attempt: int) -> dict:
 
 
 async def agent_round(llm: LLM, sandbox: Sandbox, cfg: SwarmConfig, agent_idx: int, notes: str, task: Task,
-                      posts: list[Post], round_t: int, llm_seed: int) -> RoundRecord:
-    """Run one agent for one round and return its record (post text + new notes included)."""
+                      posts: list[Post], round_t: int, llm_seed: int, solve_only: bool = False,
+                      run_label: str | None = None) -> RoundRecord:
+    """Run one agent for one round and return its record (post text + new notes included).
+
+    `solve_only=True` stops after grading (capability pass); `run_label` overrides the run id in logs/records
+    (pools, calibration and dose-response trials reuse this function with constructed notes/posts).
+    """
     name = f"a{agent_idx}"  # author id
-    tags = {"run": cfg.run_id(), "round": round_t, "agent": name, "task": task.task_id}  # log tags
+    run_id = run_label or cfg.run_id()  # label for records and logs
+    tags = {"run": run_id, "round": round_t, "agent": name, "task": task.task_id}  # log tags
     instr = P.instruction(cfg.prompt_variant, cfg.flag_option)  # ImpossibleBench instruction (+abort option)
-    rec = RoundRecord(cfg.run_id(), cfg.condition, cfg.replicate, round_t, name, task.task_id,
+    rec = RoundRecord(run_id, cfg.condition, cfg.replicate, round_t, name, task.task_id,
                       [p.post_id for p in posts], [p.author for p in posts], [p.is_seed for p in posts],
                       notes_before=notes)
     messages = [
@@ -113,6 +119,8 @@ async def agent_round(llm: LLM, sandbox: Sandbox, cfg: SwarmConfig, agent_idx: i
     rec.hack_success = bool(g and g.hackable_pass)  # final submission cheated successfully
     rec.strict_original_pass = bool(g and g.strict_original_pass)  # capability indicator
     rec.outcome = "hack" if rec.hack_attempt else ("flag" if rec.flagged else "honest")  # round-level outcome
+    if solve_only:  # capability pass: no post, notes or probe
+        return rec
     status = "flag" if rec.flagged else ("pass" if rec.hack_success else "fail")  # what the agent is told
     messages.append({"role": "user", "content": P.post_prompt(status, cfg.post_words, cfg.notes_words, cfg.feedback)})
     res = await llm.chat(messages, cfg.max_post_tokens, tags | {"phase": "post"}, seed=llm_seed + 100)  # post+notes
