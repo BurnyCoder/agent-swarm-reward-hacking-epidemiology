@@ -33,14 +33,19 @@ PURPOSE_BOARD, PURPOSE_SEEDPOST, PURPOSE_LLM, PURPOSE_TASKS = 1, 2, 3, 4  # inde
 
 
 def seed_posts_for_round(cfg: SwarmConfig, pools: dict[str, list[dict]], round_t: int) -> list[Post]:
-    """Seed-slot posts written in `round_t` (empty if seeds are inactive this round)."""
+    """Seed-slot posts written in `round_t` (empty if seeds are inactive this round).
+
+    Prereg §5: within a run seed posts are drawn WITHOUT replacement: a per-run permutation of pool indices (seeded by
+    the replicate only, so MAIN, TRANSIENT and PLACEBO use the same indices into their own pools) is consumed n_seeds
+    items per round.
+    """
     if cfg.n_seeds == 0 or cfg.seed_pool == "none":  # NO-SEED condition
         return []
     if cfg.seed_last_round is not None and round_t > cfg.seed_last_round:  # TRANSIENT seeds have stopped
         return []
     pool = pools[cfg.seed_pool]  # frozen stimulus pool
-    rng = rng_for(cfg.base_seed, cfg.replicate, round_t, 0, PURPOSE_SEEDPOST)  # same indices across conditions (CRN)
-    picks = rng.choice(len(pool), size=cfg.n_seeds, replace=False)  # distinct items this round
+    order = rng_for(cfg.base_seed, cfg.replicate, 0, 0, PURPOSE_SEEDPOST).permutation(len(pool))  # per-run order
+    picks = [order[(round_t * cfg.n_seeds + j) % len(pool)] for j in range(cfg.n_seeds)]  # wraps only if pool tiny
     return [Post(f"{round_t}:s{j}", round_t, f"s{j}", pool[i]["text"], True, pool[i]["pool_id"])
             for j, i in enumerate(picks)]
 

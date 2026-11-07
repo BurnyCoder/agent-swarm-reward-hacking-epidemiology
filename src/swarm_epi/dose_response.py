@@ -54,29 +54,45 @@ class Trial:
 
 def make_trials(cells: list[tuple[int, int, str]], n_per_cell: int, pools: dict[str, list[dict]],
                 snapshots: list[tuple[int, str]], n_tasks: int, K: int, seed: int) -> list[Trial]:
-    """Build randomized trials for (k, j, variant) cells; pools need 'pro', 'anti', 'neutral' lists."""
+    """Build randomized trials for (k, j, variant) cells; pools need 'pro', 'anti', 'neutral' lists (prereg §2.3).
+
+    - distinct: k pro-hack posts by k different authors (different pool items);
+    - same: k DISTINCT pro-hack posts written by ONE author (author ids are never displayed, so the source is carried
+      only by content/style), testing many-exposures vs many-sources (Centola & Macy 2007);
+    - offtopic: content control, k off-topic posts in place of the pro-hack posts.
+    Tasks are assigned without replacement (cycling through a random permutation), so cells are task-balanced.
+    """
     rng = np.random.default_rng(seed)  # assay randomization stream
+    by_author: dict[str, list[dict]] = {}  # author -> their pro-hack posts (same-author arm)
+    for it in pools["pro"]:
+        by_author.setdefault(it.get("author", it["pool_id"]), []).append(it)
+    specs = [(k, j, v, r) for k, j, v in cells for r in range(n_per_cell)]  # all trials
+    specs = [specs[i] for i in rng.permutation(len(specs))]  # random order before task assignment
+    task_order = np.concatenate([rng.permutation(n_tasks) for _ in range(len(specs) // n_tasks + 1)])  # balanced
     trials = []  # output
-    for k, j, variant in cells:  # each cell
-        for r in range(n_per_cell):  # replicate trials
-            items = []  # (author, text, kind, pool_id)
-            if variant == "offtopic":  # random control: k off-topic posts instead of pro-hack
-                items += [(f"x{i}", OFFTOPIC[i % len(OFFTOPIC)], "offtopic", f"off{i}") for i in
-                          rng.choice(len(OFFTOPIC), k, replace=k > len(OFFTOPIC))]
-            elif variant == "same" and k > 0:  # one pro-hack item repeated k times, same author label
-                it = pools["pro"][rng.integers(len(pools["pro"]))]
-                items += [("p0", it["text"], "pro", it["pool_id"])] * k
-            else:  # distinct pro-hack items
-                items += [(f"p{i}", pools["pro"][x]["text"], "pro", pools["pro"][x]["pool_id"])
-                          for i, x in enumerate(rng.choice(len(pools["pro"]), k, replace=False))]
-            items += [(f"n{i}", pools["anti"][x]["text"], "anti", pools["anti"][x]["pool_id"])
-                      for i, x in enumerate(rng.choice(len(pools["anti"]), j, replace=False))]
-            items += [(f"f{i}", pools["neutral"][x]["text"], "neutral", pools["neutral"][x]["pool_id"])
-                      for i, x in enumerate(rng.choice(len(pools["neutral"]), K - len(items), replace=False))]
-            order = rng.permutation(len(items))  # randomize positions
-            note_round, notes = snapshots[rng.integers(len(snapshots))]  # realistic failure-history notes
-            trials.append(Trial(f"{variant}_k{k}_j{j}_{r:03d}", k, j, variant, note_round, notes,
-                                tuple(items[i] for i in order), int(rng.integers(n_tasks))))
+    for idx, (k, j, variant, r) in enumerate(specs):
+        items = []  # (author, text, kind, pool_id)
+        if variant == "offtopic":  # content control
+            items += [(f"x{i}", OFFTOPIC[x % len(OFFTOPIC)], "offtopic", f"off{x}")
+                      for i, x in enumerate(rng.choice(len(OFFTOPIC), k, replace=k > len(OFFTOPIC)))]
+        elif variant == "same" and k > 0:  # one author with >= k pro-hack posts
+            eligible = sorted(a for a, ps in by_author.items() if len(ps) >= k)
+            if not eligible:
+                raise ValueError(f"no author with {k} pro-hack posts for the same-author arm")
+            a = eligible[rng.integers(len(eligible))]
+            items += [("p0", by_author[a][x]["text"], "pro", by_author[a][x]["pool_id"])
+                      for x in rng.choice(len(by_author[a]), k, replace=False)]
+        else:  # distinct pro-hack items
+            items += [(f"p{i}", pools["pro"][x]["text"], "pro", pools["pro"][x]["pool_id"])
+                      for i, x in enumerate(rng.choice(len(pools["pro"]), k, replace=False))]
+        items += [(f"n{i}", pools["anti"][x]["text"], "anti", pools["anti"][x]["pool_id"])
+                  for i, x in enumerate(rng.choice(len(pools["anti"]), j, replace=False))]
+        items += [(f"f{i}", pools["neutral"][x]["text"], "neutral", pools["neutral"][x]["pool_id"])
+                  for i, x in enumerate(rng.choice(len(pools["neutral"]), K - len(items), replace=False))]
+        order = rng.permutation(len(items))  # randomize positions (Hodas & Lerman 2014: position effects)
+        note_round, notes = snapshots[rng.integers(len(snapshots))]  # memory state of an uninfected swarm
+        trials.append(Trial(f"{variant}_k{k}_j{j}_{r:03d}", k, j, variant, note_round, notes,
+                            tuple(items[i] for i in order), int(task_order[idx])))
     return trials
 
 

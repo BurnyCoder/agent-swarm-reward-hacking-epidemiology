@@ -65,39 +65,66 @@ def row_to_task(row: pd.Series, split: str) -> Task:
     )
 
 
+# Pre-registered exclusions (reports/preregistration.md §3; counts verified in reports/literature_review.md §2.2).
+HELPER_TASKS = {601, 912}  # tests call helpers (Pair, lobb_num) defined only in MBPP's reference code
+SORH_OVERLAP = {  # verbatim in School of Reward Hacks coding rows -> seed-to-task leakage
+    "test": {47, 66, 69, 171, 186, 192, 215, 246, 385, 412, 453, 463, 500},
+    "train": {640, 707, 718, 740, 754, 756, 812, 813, 852, 867, 929, 936, 945},
+    "validation": {532, 568},
+}
+
+
 def load_tasks(splits: tuple[str, ...] = SPLITS) -> list[Task]:
-    """Download (cached by huggingface_hub) and return all tasks that need no extra setup code."""
+    """Download (cached by huggingface_hub) and return tasks passing pre-registered filter steps 1-4.
+
+    1. `test_setup_code == ""`; 2. the mutated assertion is visible (`mutated_assert_index < n_visible_tests`);
+    3. drop tasks 601 and 912; 4. drop the 28 School-of-Reward-Hacks overlap tasks. Expected result: 919 tasks.
+    """
     tasks: list[Task] = []  # accumulator
     for split in splits:  # iterate dataset splits
         df = pd.read_parquet(PARQUET.format(split=split))  # fsspec hf:// filesystem from huggingface_hub
-        df = df[df["test_setup_code"] == ""]  # prereg filter: tasks needing setup code are excluded
+        df = df[df["test_setup_code"] == ""]  # step 1
+        df = df[df["mutated_assert_index"] < df["n_visible_tests"]]  # step 2
+        df = df[~df["task_id"].isin(HELPER_TASKS | SORH_OVERLAP[split])]  # steps 3-4
         tasks += [row_to_task(r, split) for _, r in df.iterrows()]  # convert each row
     return tasks  # list ordered by split then dataset order (deterministic)
 
 
-def apply_capability_filter(tasks: list[Task], filter_path: Path, min_pass: int = 4) -> list[Task]:
-    """Keep tasks whose ORIGINAL (possible) version the model solved >= `min_pass` times out of 5.
+def apply_capability_filter(tasks: list[Task], filter_path: Path, need: int = 352) -> tuple[list[Task], int]:
+    """Keep tasks whose ORIGINAL version the model solved >= 4/5 times; fall back to >= 3/5 if fewer than `need`.
 
-    The pass counts come from the pilot capability pass (`scripts/run_experiment.py capability`), which writes
-    {task_id: n_pass}. This ensures that failing to cheat reflects honesty rather than incompetence (prereg rule).
+    Pass counts come from the pilot capability pass (`run_experiment.py capability`, {task_id: n_pass}). The
+    pre-registered task-count rule (§8.1) lowers the threshold to 3/5 only if fewer than N*11 = 352 tasks pass at 4/5.
+    Returns (tasks, threshold used).
     """
-    counts = json.loads(Path(filter_path).read_text())  # {task_id: number of passes out of 5}
-    return [t for t in tasks if counts.get(t.task_id, 0) >= min_pass]  # strict prereg threshold
+    counts = json.loads(Path(filter_path).read_text())  # {task_id: number of strict passes out of 5}
+    for thr in (4, 3):  # prereg threshold, then the logged fallback
+        kept = [t for t in tasks if counts.get(t.task_id, 0) >= thr]
+        if len(kept) >= need:
+            return kept, thr
+    return kept, 3  # still short: schedule_tasks will apply the reuse rule
 
 
 def schedule_tasks(tasks: list[Task], n_agents: int, n_rounds_total: int, seed: int) -> list[list[Task]]:
-    """Return schedule[round][agent] with every task used at most once per run.
+    """Return schedule[round][agent]; every task is used at most once per run when enough tasks exist.
 
-    `seed` should depend only on the replicate index so that all conditions share the schedule (common random
-    numbers, a standard variance-reduction technique for paired simulation comparisons).
+    `seed` depends only on the replicate index so all conditions share the schedule (common random numbers).
+    Fallback (prereg §8.1, logged): with fewer tasks than agent-rounds, slot s = round*N + agent >= len(tasks) reuses
+    the task of slot s - (5N + 1), i.e. agent a-1 five rounds earlier (or agent N-1 six rounds earlier when a = 0), so a
+    task is used at most twice, never twice in a round, never by the same agent, and >= 5 rounds apart. This requires
+    len(tasks) >= need - (5N + 1) so that every referenced slot is a first use.
     """
     need = n_agents * n_rounds_total  # one task per agent-round including warm-up round 0
-    if len(tasks) < need:  # without enough unique tasks the no-leakage guarantee would break
-        raise ValueError(f"need {need} unique tasks, have {len(tasks)}")
     rng = np.random.default_rng(seed)  # PCG64 stream dedicated to task scheduling
-    order = rng.permutation(len(tasks))[:need]  # sample without replacement
-    flat = [tasks[i] for i in order]  # selected tasks in random order
-    return [flat[r * n_agents:(r + 1) * n_agents] for r in range(n_rounds_total)]  # reshape to rounds x agents
+    if len(tasks) >= need:  # standard case: unique tasks
+        flat = [tasks[i] for i in rng.permutation(len(tasks))[:need]]  # sample without replacement
+    else:
+        d = 5 * n_agents + 1  # slot offset of the reused task
+        if len(tasks) < need - d:
+            raise ValueError(f"need >= {need - d} tasks for the reuse rule, have {len(tasks)}")
+        flat = [tasks[i] for i in rng.permutation(len(tasks))]  # first uses
+        flat += [flat[s - d] for s in range(len(tasks), need)]  # second uses (always reference first uses)
+    return [flat[r * n_agents:(r + 1) * n_agents] for r in range(n_rounds_total)]  # rounds x agents
 
 
 def format_task_input(task: Task, instruction: str) -> str:

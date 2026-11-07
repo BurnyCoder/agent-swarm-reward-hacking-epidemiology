@@ -3,7 +3,7 @@
 Usage (inside WSL, with the vLLM server up):  uv run python scripts/run_experiment.py <phase> [--parallel 4]
 Phases, in pre-registered order:
   smoke       tiny end-to-end run (N=8, T=3) to check wiring, logging, grading and the dashboard
-  capability  capability filter on the ORIGINAL tasks           -> data/capability.json
+  capability  presence_penalty rule + capability filter (ORIGINAL tasks) -> data/sampling.json, data/capability.json
   pools       hack/placebo seed pools (generated, judged)        -> data/pools.json
   calibrate   ImpossibleBench prompt-variant calibration         -> data/calibration.json
   pilot       2 MAIN + 2 PLACEBO pilot swarms                    -> $RUNS_DIR/pilot/
@@ -20,6 +20,7 @@ import argparse  # CLI
 import asyncio  # event loop
 import json  # data files
 import logging  # progress
+from dataclasses import replace  # config overrides
 from pathlib import Path  # paths
 
 from swarm_epi import conditions, pilot  # condition lists + pilot phases
@@ -57,24 +58,36 @@ async def main(args: argparse.Namespace) -> None:
     rt = RuntimeConfig()  # paths + sandbox
     runs = rt.runs_dir  # raw output root
     jsonl = setup_logging(runs / "logs", args.phase)  # timestamped log + LLM-call JSONL
-    llm = LLM(LLMConfig(), jsonl_path=jsonl, echo=not args.quiet)  # inference client
+    sampling = DATA / "sampling.json"  # presence_penalty decided by the prereg rule (§8.1)
+    llm_cfg = LLMConfig()
+    if sampling.exists():
+        llm_cfg = replace(llm_cfg, presence_penalty=json.loads(sampling.read_text())["presence_penalty"])
+    llm = LLM(llm_cfg, jsonl_path=jsonl, echo=not args.quiet)  # inference client
     sandbox = Sandbox(rt.sandbox, rt.sandbox_concurrency, rt.exec_timeout_s)  # isolation backend
     DATA.mkdir(exist_ok=True)
-    all_tasks = load_tasks()  # 954 impossible MBPP tasks (setup-free)
+    all_tasks = load_tasks()  # 919 impossible MBPP tasks after prereg filter steps 1-4
     cap = DATA / "capability.json"
-    tasks = apply_capability_filter(all_tasks, cap) if cap.exists() else all_tasks  # prereg capability filter
-    log.info("phase=%s tasks=%d (filtered=%s) runs_dir=%s", args.phase, len(tasks), cap.exists(), runs)
+    tasks, thr = apply_capability_filter(all_tasks, cap) if cap.exists() else (all_tasks, None)  # prereg filter
+    log.info("phase=%s tasks=%d/%d (capability threshold=%s) runs_dir=%s", args.phase, len(tasks), len(all_tasks),
+             thr, runs)
     variant = read_json("calibration.json")["chosen"] if (DATA / "calibration.json").exists() else "D"
 
     if args.phase == "smoke":
         pools = {"hack": [{"pool_id": f"smoke{i}", "text": P.SEED_NOTES_HACK} for i in range(2)]}  # provisional
         await run_many(conditions.smoke(variant), llm, sandbox, all_tasks, pools, runs / "smoke", 1)
     elif args.phase == "capability":
+        if not sampling.exists():  # presence_penalty rule first, then the capability pass with the chosen value
+            rule = await pilot.presence_penalty_rule(llm_cfg, jsonl, sandbox, all_tasks, sampling)
+            llm = LLM(replace(llm_cfg, presence_penalty=rule["presence_penalty"]), jsonl_path=jsonl,
+                      echo=not args.quiet)
         await pilot.capability_pass(llm, sandbox, all_tasks, cap)
     elif args.phase == "pools":
-        await pilot.build_pools(llm, sandbox, tasks, DATA / "pools.json", n=args.n or 200)
+        if (DATA / "pools.json").exists():  # candidates exist: re-apply thresholds + manual check only
+            pilot.finalize_pools(DATA / "pools.json")
+        else:
+            await pilot.build_pools(llm, sandbox, tasks, DATA / "pools.json", n=args.n or 300)
     elif args.phase == "calibrate":
-        res = await pilot.calibrate(llm, sandbox, tasks, read_json("pools.json"), runs / "calibration", n=args.n or 50)
+        res = await pilot.calibrate(llm, sandbox, tasks, read_json("pools.json"), runs / "calibration", n=args.n or 100)
         (DATA / "calibration.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
     elif args.phase == "pilot":
         await run_many(conditions.pilot(variant), llm, sandbox, tasks, read_json("pools.json"), runs / "pilot",
@@ -85,7 +98,7 @@ async def main(args: argparse.Namespace) -> None:
     elif args.phase == "assay":
         ap = read_json("assay_pools.json")  # pro / anti / neutral pools + snapshots
         cells = [(k, 0, "distinct") for k in (0, 1, 2, 3, 4, 6)] + [(k, 2, "distinct") for k in (0, 1, 2, 3, 4)]
-        cells += [(k, 0, "same") for k in (2, 4)] + [(k, 0, "offtopic") for k in (2, 4)]  # Centola + random control
+        cells += [(k, 0, "same") for k in (2, 4)] + [(k, 0, "offtopic") for k in (2, 4, 6)]  # prereg §2.3
         trials = make_trials(cells, args.n or 150, ap, [tuple(s) for s in ap["snapshots"]], len(tasks), 6, seed=7)
         (runs / "assay").mkdir(parents=True, exist_ok=True)
         await run_trials(trials, llm, sandbox, SwarmConfig(condition="ASSAY", prompt_variant=variant), tasks,

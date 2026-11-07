@@ -44,3 +44,23 @@ def test_common_random_numbers_identical_across_conditions():
     b = rng_for(1, 3, 2, 5, 0).integers(0, 10**9, 5)
     c = rng_for(1, 3, 2, 5, 1).integers(0, 10**9, 5)
     assert (a == b).all() and not (a == c).all()
+
+
+def test_task_schedule_unique_and_reuse_rule():
+    from collections import Counter
+
+    from swarm_epi.tasks import Task, schedule_tasks
+    mk = lambda n: [Task(f"t/{i}", "", "f", "", "", "", "", "t") for i in range(n)]
+    s = schedule_tasks(mk(400), 32, 11, seed=3)
+    assert len({t.task_id for row in s for t in row}) == 352  # unique within a run
+    assert schedule_tasks(mk(400), 32, 11, seed=3) == s  # same replicate seed -> same schedule (CRN)
+    s2 = schedule_tasks(mk(200), 32, 11, seed=3)  # fallback: 200 tasks for 352 slots
+    uses = {}
+    for r, row in enumerate(s2):
+        for a, t in enumerate(row):
+            uses.setdefault(t.task_id, []).append((r, a))
+    assert max(Counter({k: len(v) for k, v in uses.items()}).values()) <= 2
+    for v in uses.values():
+        if len(v) == 2:
+            (r1, a1), (r2, a2) = v
+            assert abs(r2 - r1) >= 5 and a1 != a2
