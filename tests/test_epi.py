@@ -38,8 +38,11 @@ def test_hazard_glm_recovers_positive_exposure_effect_and_null_under_permutation
                        "k_seed": rng.binomial(6, 0.06, n), "k_nonseed": rng.binomial(6, 0.2, n)})
     eta = -3.0 + 0.5 * df.k_seed + 0.4 * df.k_nonseed  # cloglog linear predictor
     df["y"] = (rng.random(n) < 1 - np.exp(-np.exp(eta))).astype(int)
-    res = hazard.fit_cloglog(df, ["k_seed", "k_nonseed"])
-    assert abs(res.params["k_nonseed"] - 0.4) < 0.08 and res.pvalues["k_nonseed"] < 1e-6
+    res = hazard.fit_cloglog(df, ["k_seed", "k_nonseed"])  # round + run fixed effects (no task column here)
+    hr = hazard.hazard_ratio(res, "k_nonseed")
+    assert abs(hr["beta"] - 0.4) < 0.08 and hr["p_one_sided"] < 1e-6
+    chk = hazard.statsmodels_check(df, ["k_seed", "k_nonseed"])  # IRLS == statsmodels GLM (estimates and SEs)
+    assert np.allclose(chk.sm_beta, chk.irls_beta, atol=1e-5) and np.allclose(chk.sm_se, chk.irls_se, rtol=1e-3)
     df["y"] = df.groupby("round")["y"].transform(lambda s: rng.permutation(s.values))  # random control
     res0 = hazard.fit_cloglog(df, ["k_seed", "k_nonseed"])
     assert abs(res0.params["k_nonseed"]) < 0.08
