@@ -6,7 +6,8 @@ Local context: each template is Markdown with Python format fields such as `{smo
 stem (e.g. results/engineering/length_probe.json -> `length_probe`) and under `<folder>_<stem>` (e.g.
 results/explore/summary.json -> `explore_summary`), and `str.format_map` fills the fields
 (https://docs.python.org/3/library/string.html#format-string-syntax: `[key]` indexes a mapping with a string key).
-A template whose inputs do not exist yet is skipped with a message, so the command can be rerun at any stage.
+A template whose input FILE does not exist yet is skipped with a message; a value missing inside an existing file
+renders as "n/a". The command can be rerun at any stage.
 Global context: `scripts/analyze.py` regenerates results/; this script then regenerates the reports (one command each).
 """
 
@@ -19,12 +20,50 @@ ROOT = Path(__file__).resolve().parents[1]  # repo root
 TEMPLATES, OUT = ROOT / "reports" / "templates", ROOT / "reports" / "experiments"
 
 
+class _Missing:
+    """Placeholder for a value absent inside an existing results file (e.g. H2 reported "too few events"): any
+    further [key] returns itself and any format spec renders "n/a", so one missing number does not drop a report."""
+
+    def __getitem__(self, key):
+        return self
+
+    def __format__(self, spec: str) -> str:
+        return "n/a"
+
+    __str__ = __repr__ = lambda self: "n/a"
+
+
+MISSING = _Missing()
+
+
+class _SafeDict(dict):
+    def __missing__(self, key):  # str.format's [key] lookup lands here for absent keys
+        return MISSING
+
+
+class _SafeList(list):
+    def __getitem__(self, i):
+        try:
+            return super().__getitem__(i)
+        except (IndexError, TypeError):
+            return MISSING
+
+
+def _safe(x):
+    """Recursively wrap parsed JSON so absent nested keys/indices render as n/a."""
+    if isinstance(x, dict):
+        return _SafeDict({k: _safe(v) for k, v in x.items()})
+    if isinstance(x, list):
+        return _SafeList(_safe(v) for v in x)
+    return x
+
+
 def load_namespace() -> dict:
     """{file stem: parsed JSON} for every JSON file in results/ and data/ (later directories win on name clashes)."""
     ns = {}
     for base in (ROOT / "data", ROOT / "results"):
         for p in sorted(base.rglob("*.json")) if base.exists() else []:
-            d = json.loads(p.read_text(encoding="utf-8"))
+            d = _safe(json.loads(p.read_text(encoding="utf-8")))  # nested gaps render as n/a
             ns[p.stem] = d  # short key, e.g. `length_probe`
             ns[f"{p.parent.name}_{p.stem}"] = d  # folder-qualified key, e.g. `explore_summary` vs `results_summary`
     return ns
