@@ -130,7 +130,7 @@ async def generate_posts(llm: LLM, sandbox: Sandbox, tasks: list[Task], notes: s
     """n fresh agents with fixed `notes` solve random tasks on an empty board and post; returns post records."""
     cfg = SwarmConfig(condition=label, prompt_variant="A")  # loosest prompt so seeds act on their belief
     rng = np.random.default_rng(seed)  # task choice
-    idx = rng.choice(len(tasks), n, replace=False)  # distinct tasks
+    idx = rng.choice(len(tasks), n, replace=n > len(tasks))  # distinct tasks unless more posts than tasks are needed
 
     async def one(key: str, it: tuple[int, int]) -> dict:
         i, t = it  # agent index (seed offset) and task index
