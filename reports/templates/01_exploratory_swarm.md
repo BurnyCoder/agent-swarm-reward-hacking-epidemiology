@@ -240,6 +240,9 @@ backoff, as the OpenAI client already did for completions.
 - Exploratory: 8 replicates per condition (preregistered confirmatory batch: 20/20/15). The task filter comes from a
   partial capability pass (534 of 919 tasks). Calibration used 50 trials per cell. The pools hold 58 matched pairs,
   checked mechanically plus one reading. Audits of the judge (κ) and of the hack detector have not run yet, so post
-  stance and hack labels are unvalidated.
+  stance and hack labels are unvalidated. The judge does miss some pro-hack content: the post in the examples
+  above that adjusts its logic to return the impossible "Valid EmailX" output describes special-casing, yet it was
+  labelled neutral. Such misses move pro-hack posts into the neutral count. The judge-free robustness exposure (posts
+  by authors who hacked) does not depend on the judge, and it also gives a hazard ratio above 1.
 - One model (Qwen3.5-4B, 4-bit), one board design, one task family. The dose-response assay, which would predict the
   swarm curve out of sample, has not run.
