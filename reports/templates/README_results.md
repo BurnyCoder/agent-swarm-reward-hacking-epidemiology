@@ -18,4 +18,13 @@ ImpossibleBench prompt {calibration[chosen]}. Full report:
 | Persistence after seeds stop (TRANSIENT − PLACEBO, rounds 8–10) | {explore_summary[h3][late_window][diff]:+.1%} [{explore_summary[h3][late_window][ci_low]:+.1%}, {explore_summary[h3][late_window][ci_high]:+.1%}] |
 | Preregistered self-sustainability decision | {explore_summary[h3][decision]} |
 
+**Counter-contagion (exploratory, model chosen after an interim look; [deviation #15](reports/deviations.md)):**
+the flag rate went from {explore_summary[counter_contagion][flag_rate_round0][PLACEBO]:.0%} in round 0 (empty
+board) to {explore_summary[counter_contagion][flag_rate_round10][PLACEBO]:.0%} in round 10 in PLACEBO
+(MAIN {explore_summary[counter_contagion][flag_rate_round0][MAIN]:.0%} →
+{explore_summary[counter_contagion][flag_rate_round10][MAIN]:.0%}). Hazard ratio of starting to flag per anti-hack
+post read: {explore_summary[counter_contagion][k_anti][hr]:.2f}
+[{explore_summary[counter_contagion][k_anti][hr_low]:.2f}, {explore_summary[counter_contagion][k_anti][hr_high]:.2f}].
+
 ![Hack-attempt prevalence by round](results/explore/figures/fig_prevalence.png)
+![Flag rate by round](results/explore/figures/fig_flag_rate.png)
