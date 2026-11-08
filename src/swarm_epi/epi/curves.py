@@ -11,7 +11,8 @@ Local context — models for cumulative count C(t) (closed forms):
                                                                Chowell 2016, Epidemics 15:27; Chowell 2017 Eq. 1)
 - bass         C = C0 + (M-C0) F(t), F = (1-e^{-(a+b)t}) / (1 + (b/a) e^{-(a+b)t})   (Bass 1969, Management Science
                15:215: a = external/innovation, b = internal/imitation coefficient)
-Likelihood: new_t ~ Binomial(N - C_obs(t-1), h_t), h_t = (C(t) - C(t-1)) / (N - C(t-1)) from the model trajectory —
+Likelihood: new_t ~ Binomial(N - C_obs(t-1), h_t), h_t = (C(t) - C(t-1)) / (N - C(t-1)) from the model trajectory,
+t = 0..T with C(-1) = 0 so round 0 anchors the level —
 interval incidence rather than correlated cumulative points (Ma et al. 2014 §2.3 motivates fitting increments).
 Multiple runs can be pooled (shared parameters, summed log-likelihoods). AICc ranks models (Burnham & Anderson 2004).
 Global context: reported descriptively; treated as evidence only if `identifiability` in the pilot shows >= 80%
@@ -95,10 +96,16 @@ class CurveFit:
 
 
 def loglik(model: Model, th, C: np.ndarray, N: int) -> float:
-    """Conditional-binomial log-likelihood of increments, summed over runs (rows of C)."""
+    """Conditional-binomial log-likelihood of increments, summed over runs (rows of C).
+
+    Round 0 is the first increment, from C(-1) = 0 (nobody has hacked before the first round): its hazard is
+    C(0)/N. This anchors the trajectory's level to the observed counts; increments alone only constrain the implied
+    hazards, and the optimizer could then park a saturating curve at C0 ~ K ~ N.
+    """
     C = np.atleast_2d(C).astype(float)  # runs x (T+1)
     t = np.arange(C.shape[1], dtype=float)  # rounds 0..T
-    m = np.clip(model.f(t, th), 0, N - 1e-6)  # model trajectory bounded by population size
+    C = np.hstack([np.zeros((C.shape[0], 1)), C])  # prepend C(-1) = 0
+    m = np.concatenate([[0.0], np.clip(model.f(t, th), 0, N - 1e-6)])  # model trajectory with m(-1) = 0
     h = np.clip(np.diff(m) / np.maximum(N - m[:-1], 1e-9), 1e-9, 1 - 1e-9)  # per-round hazard
     n_sus = N - C[:, :-1]  # observed susceptibles at start of each round
     x = np.diff(C, axis=1)  # observed new infections
@@ -116,7 +123,7 @@ def fit(name: str, C: np.ndarray, N: int) -> CurveFit:
         r = optimize.minimize(lambda th: -loglik(model, th, C, N), th0, method="L-BFGS-B", bounds=model.bounds(N))
         if best is None or r.fun < best.fun:
             best = r
-    n_obs = int(C.shape[0] * (C.shape[1] - 1))  # number of increments
+    n_obs = int(C.shape[0] * C.shape[1])  # increments, round 0 included (from C(-1) = 0)
     return CurveFit(name, dict(zip(model.names, map(float, best.x))), -float(best.fun), len(best.x), n_obs)
 
 

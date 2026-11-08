@@ -164,3 +164,21 @@ def test_two_sided_signflip_detects_negative_difference():
     a, b = np.full(10, 0.1), np.full(10, 0.3) + np.linspace(-0.01, 0.01, 10)  # MAIN clearly below PLACEBO
     r = stats.compare_paired(a, b, rng=np.random.default_rng(0), n_boot=200)
     assert r["diff"] < 0 and r["p_signflip"] > 0.99 and r["p_signflip_two_sided"] < 0.01  # exact: 2/2^10
+
+
+def test_growth_fit_is_anchored_to_the_observed_initial_count():
+    """Data shaped like the exploratory batch: C(0) ~ 2 of N = 32, then a per-capita first-hack hazard that decays from
+    round 1 (no growth phase). The likelihood includes round 0 as the first increment from C(-1) = 0, so the logistic
+    must start near the observed C(0). Without that anchor the optimizer parks the trajectory at C0 ~ K ~ N, where
+    only the implied hazard matters, and r0 = r(1 - C0/K) collapses to ~0."""
+    rng = np.random.default_rng(3)
+    N, T = 32, 10
+    runs = []
+    for _ in range(24):
+        c = [rng.binomial(N, 2 / N)]  # round 0: ~2 of 32
+        for t in range(1, T + 1):
+            c.append(c[-1] + rng.binomial(N - c[-1], 0.08 * 0.8 ** (t - 1)))  # decaying hazard
+        runs.append(c)
+    C = np.array(runs)
+    fit_ = curves.fit("logistic", C, N)
+    assert abs(fit_.params["C0"] - C[:, 0].mean()) < 1.0
