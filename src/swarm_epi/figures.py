@@ -34,23 +34,25 @@ def _band(values: np.ndarray, rng: np.random.Generator, B: int = 2000) -> tuple[
     return np.percentile(boots, 2.5, 0), np.percentile(boots, 97.5, 0)
 
 
-def fig_prevalence(prev: pd.DataFrame, out: Path) -> None:
-    """Non-seed hack-attempt prevalence by round: thin per-run lines + mean with 95% bootstrap band."""
+def fig_prevalence(prev: pd.DataFrame, out: Path, col: str = "prevalence", fname: str = "fig_prevalence.png",
+                   ylabel: str = "Hack-attempt prevalence (non-seed agents)",
+                   title: str = "Spread of hacking through the swarm") -> None:
+    """Per-round rate `col` (default: non-seed hack-attempt prevalence): thin per-run lines + mean with 95% bootstrap
+    band. Also draws the flag-rate curve (col="flag_rate") for the counter-contagion analysis."""
     rng = np.random.default_rng(0)
     fig, ax = plt.subplots(figsize=(7, 4))
     for cond, g in prev.groupby("condition"):
-        mat = g.pivot(index="run_id", columns="round", values="prevalence").values  # runs x rounds
+        mat = g.pivot(index="run_id", columns="round", values=col).values  # runs x rounds
         x = np.arange(mat.shape[1])
         for row in mat:  # individual runs (recessive)
             ax.plot(x, row, color=COLORS.get(cond, INK2), alpha=0.12, linewidth=0.8)
         lo, hi = _band(mat, rng)
         ax.fill_between(x, lo, hi, color=COLORS.get(cond, INK2), alpha=0.2, linewidth=0)
         ax.plot(x, mat.mean(0), color=COLORS.get(cond, INK2), label=f"{cond} (n={len(mat)} runs)")
-    ax.set(xlabel="Round (0 = warm-up, empty board)", ylabel="Hack-attempt prevalence (non-seed agents)", ylim=(0, 1),
-           title="Spread of hacking through the swarm")
+    ax.set(xlabel="Round (0 = warm-up, empty board)", ylabel=ylabel, ylim=(0, 1), title=title)
     ax.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig(out / "fig_prevalence.png")
+    fig.savefig(out / fname)
     plt.close(fig)
 
 
@@ -149,7 +151,11 @@ def make_all(results_dir: Path) -> list[str]:
     out = results_dir / "figures"
     out.mkdir(parents=True, exist_ok=True)
     summary = json.loads((results_dir / "summary.json").read_text(encoding="utf-8"))
-    fig_prevalence(pd.read_csv(results_dir / "prevalence_by_round.csv"), out)
+    prev = pd.read_csv(results_dir / "prevalence_by_round.csv")
+    fig_prevalence(prev, out)
+    if "flag_rate" in prev:  # counter-contagion: share of non-seed agents replying with the flag
+        fig_prevalence(prev, out, "flag_rate", "fig_flag_rate.png", "Flag rate (non-seed agents)",
+                       "Spread of flagging through the swarm")
     for fn in (fig_dose, fig_hazard, fig_h5, fig_mechanisms):
         fn(summary, out)
     return sorted(p.name for p in out.glob("*.png"))

@@ -74,7 +74,8 @@ def judged(s: dict, stance: str) -> bool:
 
 
 def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict) -> pd.DataFrame:
-    """Per agent-round: S, M, anti counts, author-hack exposure, E (expected M given the board), lagged state."""
+    """Per agent-round: S, M, anti counts, author-hack exposure, E / E_anti (expected M / anti given the board),
+    lagged hack and flag state."""
     hack = {(r.run_id, r.agent, r.round): bool(r.hack_attempt) for r in recs.itertuples()}  # author status
     info, board = {}, {}  # (run, post_id) -> flags; (run, round) -> candidate posts
     for p in posts.itertuples():
@@ -82,7 +83,7 @@ def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict) -> pd
         pro, anti = judged(s, "pro"), judged(s, "anti")  # judge label of this post
         ah = (not p.is_seed) and hack.get((p.run_id, p.author, p.round), False)
         info[(p.run_id, p.post_id)] = (p.is_seed, pro, anti, ah)
-        board.setdefault((p.run_id, p.round), []).append((p.author, p.is_seed, pro, ah))
+        board.setdefault((p.run_id, p.round), []).append((p.author, p.is_seed, pro, ah, anti))
     rows = []
     for r in recs.itertuples():
         S = Mn = A = Mh = 0
@@ -96,15 +97,18 @@ def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict) -> pd
         kk = min(K, len(cand))
         E = kk * np.mean([(not b[1]) and b[2] for b in cand]) if cand else 0.0  # expected non-seed pro-hack read
         Eh = kk * np.mean([b[3] for b in cand]) if cand else 0.0  # expected hacked-author posts read
-        rows.append((S, Mn, A, Mh, E, Eh))
+        Ea = kk * np.mean([b[4] for b in cand]) if cand else 0.0  # expected anti-hack posts read
+        rows.append((S, Mn, A, Mh, E, Eh, Ea))
     out = recs.copy()
-    cols = ["k_seed_pro", "k_nonseed_pro", "k_anti", "k_author_hack", "E", "E_author"]
+    cols = ["k_seed_pro", "k_nonseed_pro", "k_anti", "k_author_hack", "E", "E_author", "E_anti"]
     out[cols] = pd.DataFrame(rows, index=out.index, columns=cols)
     out = out.sort_values(["run_id", "agent", "round"]).reset_index(drop=True)
     out["prev_hack"] = out.groupby(["run_id", "agent"])["hack_attempt"].shift(1)  # NaN in round 0
+    out["prev_flag"] = out.groupby(["run_id", "agent"])["flagged"].shift(1)  # flag state in t-1 (counter-contagion)
     out["ever_before"] = out.groupby(["run_id", "agent"])["hack_attempt"].transform(
         lambda s: s.astype(int).cumsum().shift(1, fill_value=0) > 0)  # hacked in an earlier round
     out["post_pro"] = [judged(labels.get(f"{r}:{p}", {}), "pro") for r, p in zip(out.run_id, out.post_id)]
+    out["post_anti"] = [judged(labels.get(f"{r}:{p}", {}), "anti") for r, p in zip(out.run_id, out.post_id)]
     out["task"], out["run"] = out["task_id"], out["run_id"]
     out["unparseable"] = [not _parses(a[0]["code"]) if a else True for a in out["attempts"]]
     return out
@@ -198,6 +202,37 @@ def h2(df: pd.DataFrame, rng, n_perm: int = 1000, n_boot: int = 2000, h1_star: f
         cover.append(b - 1.96 * se <= 0 <= b + 1.96 * se)
     out["permutation_control"] = {"mean_beta": float(np.mean(betas)), "sd_beta": float(np.std(betas)),
                                   "coverage_of_zero": float(np.mean(cover)), "n_perm": n_perm}
+    return out
+
+
+# ============================================================================================ counter-contagion
+CC_SLOPES = ["k_anti", "E_anti", "k_seed_pro", "k_nonseed_pro", "E"]
+
+
+def counter_contagion(df: pd.DataFrame) -> dict:
+    """Exploratory (prereg §9, secondary list: "flag and anti-hack counter-contagion"): does reading anti-hack posts
+    raise the hazard of STARTING to flag?
+
+    Same randomized-exposure design as H2 with the outcome swapped: risk set = agent-rounds t >= 1 that did not flag in
+    t - 1; y = flagged in t; cloglog with round + run + task fixed effects and run-clustered SEs. The K posts read are a
+    uniform sample of the previous round's board, so given E_anti (expected anti-hack posts read) the count k_anti is
+    randomized; the pro-hack counts enter with their own E as in H2. The model form was fixed after an interim
+    descriptive look at flag rates (rising in every condition), so it is post hoc and reported as such.
+    """
+    h = df[(df["round"] >= 1) & (df["prev_flag"] == False)].copy()  # == False also drops round-0 NaN
+    h["y"] = h["flagged"].astype(int)
+    if h["y"].sum() < 5 or h["run"].nunique() < 3:
+        return {"error": "too few events"}
+    slopes = [c for c in CC_SLOPES if h[c].nunique() > 1]  # a constant column (e.g. no seed exposure) is unidentified
+    res = hazard.fit_cloglog(h, slopes)
+    out = {c: hazard.hazard_ratio(res, c) for c in ("k_anti", "k_seed_pro", "k_nonseed_pro") if c in slopes}
+    out["slopes"] = slopes
+    out["h_anti_marginal"] = hazard.marginal_h1(res, "k_anti")  # avg hazard increase per anti-hack post read
+    out |= {"n_rows": len(h), "n_events": int(h["y"].sum()), "n_runs": int(h["run"].nunique())}
+    fr = df.groupby(["condition", "round"])["flagged"].mean().unstack()  # condition x round flag rate
+    out["flag_rate_round0"] = fr[0].round(4).to_dict()
+    out["flag_rate_round10"] = fr[fr.columns.max()].round(4).to_dict()
+    out["post_anti_rate"] = df.groupby("condition")["post_anti"].mean().round(4).to_dict()  # judged anti-hack posts
     return out
 
 
@@ -410,7 +445,8 @@ def run_all(batch_dir: Path, assay_path: Path | None, labels_path: Path, out_dir
     labels = json.loads(labels_path.read_text(encoding="utf-8")) if labels_path.exists() else {}
     recs, posts = load_runs(batch_dir)
     df = attach_exposure(recs, posts, labels)
-    prev = df.groupby(["condition", "run_id", "round"])["hack_attempt"].mean().rename("prevalence").reset_index()
+    prev = df.groupby(["condition", "run_id", "round"]).agg(prevalence=("hack_attempt", "mean"),
+                                                             flag_rate=("flagged", "mean")).reset_index()
     prev.to_csv(out_dir / "prevalence_by_round.csv", index=False)
     rm = run_means(df, range(1, 11))
     S = {"n_runs": df.groupby("condition")["run_id"].nunique().to_dict()}
@@ -432,6 +468,7 @@ def run_all(batch_dir: Path, assay_path: Path | None, labels_path: Path, out_dir
     ident = json.loads(power_path.read_text())["identifiability"]["passes_80pct"] if power_path.exists() else None
     S["growth_curves"] = growth_curves(df, ident)
     S["h5"] = h5(df, S.get("h4", {}), json.loads(sim_path.read_text()) if sim_path.exists() else {}, rng, reps)
+    S["counter_contagion"] = counter_contagion(df)  # exploratory, post hoc model form
     S["descriptives"] = df.groupby("condition").agg(
         hack_attempt=("hack_attempt", "mean"), hack_success=("hack_success", "mean"), flag=("flagged", "mean"),
         capable=("strict_original_pass", "mean"), probe_p_yes=("probe_p_yes", "mean"),
