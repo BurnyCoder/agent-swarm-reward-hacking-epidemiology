@@ -211,6 +211,28 @@ async def build_pools(llm: LLM, sandbox: Sandbox, tasks: list[Task], out_path: P
     return finalize_pools(out_path)
 
 
+async def extend_hack_pool(llm: LLM, sandbox: Sandbox, tasks: list[Task], path: Path, n: int = 600,
+                           round_id: int = 2) -> dict:
+    """Add n pro-hack candidates generated exactly like the first ones (hack-belief notes, loosest prompt, empty board)
+    under fresh ids `poolhack{round_id}_*` and a new RNG seed, judge only the new ones, then re-apply the pool rules.
+
+    Prereg §8.3 asks for >= 100 items per pool; the first 300 candidates left 58 after the §5 rules (deviation #14).
+    The frozen candidates in pools.json are kept unchanged.
+    """
+    pools = json.loads(path.read_text(encoding="utf-8"))
+    label = f"poolhack{round_id}"
+    ck = path.with_name(f"{label}.partial.jsonl")  # resumable
+    new = await generate_posts(llm, sandbox, tasks, P.SEED_NOTES_HACK, n, label, 11 + 100 * round_id, ck)
+    scores = await judge_many(llm, {p["pool_id"]: p["text"] for p in new})
+    for p in new:
+        p.update(scores[p["pool_id"]])
+    pools["_all_hack"] = pools["_all_hack"] + new
+    path.write_text(json.dumps(pools, indent=1, ensure_ascii=False), encoding="utf-8")
+    if ck.exists():
+        ck.unlink()  # candidates are now frozen in pools.json
+    return finalize_pools(path)
+
+
 def finalize_pools(path: Path, manual: Path | None = None) -> dict:
     """Apply judge thresholds, manual-check exclusions and +-5-word length matching to the candidates in `path`."""
     pools = json.loads(path.read_text(encoding="utf-8"))

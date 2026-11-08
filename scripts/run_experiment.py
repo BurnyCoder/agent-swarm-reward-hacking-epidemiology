@@ -92,6 +92,8 @@ async def main(args: argparse.Namespace) -> None:
         pools_path = DATA / "pools.json"
         if pools_path.exists() and read_json("pools.json").get("placebo_source") != "tips":  # deviation #14
             await pilot.rebuild_placebo_as_tips(llm, pools_path, n=args.n or 300)
+        elif pools_path.exists() and args.extend_hack:  # more pro-hack candidates, same method (prereg §8.3: >= 100)
+            await pilot.extend_hack_pool(llm, sandbox, tasks, pools_path, n=args.n or 600, round_id=args.extend_hack)
         elif pools_path.exists():  # candidates exist: re-apply thresholds + manual check only
             pilot.finalize_pools(pools_path)
         else:
@@ -161,6 +163,8 @@ if __name__ == "__main__":
     ap.add_argument("--quiet", action="store_true", help="do not echo every LLM call to the terminal")
     ap.add_argument("--batch", default="batch1", help="run sub-directory the judge phase labels")
     ap.add_argument("--early-stop", action="store_true", help="calibration: stop at the first qualifying variant")
+    ap.add_argument("--extend-hack", type=int, default=0, metavar="ROUND",
+                    help="pools: add --n pro-hack candidates as generation round ROUND (>= 2; ids poolhackROUND_*)")
     ap.add_argument("--partial-capability", action="store_true",
                     help="filter tasks with the capability counts finished so far (exploratory runs only)")
     asyncio.run(main(ap.parse_args()))
