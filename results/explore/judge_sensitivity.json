@@ -1,0 +1,22 @@
+{
+ "judge_label_counts": {
+  "anti": 7723,
+  "neutral": 588,
+  "pro": 137
+ },
+ "p_blind_pro_given_judge": {
+  "anti": 0.0,
+  "neutral": 0.37142857142857144,
+  "pro": 1.0
+ },
+ "estimated_true_pro_posts": 355.4,
+ "judge_pro_sensitivity": 0.38548114800225103,
+ "pi": 0.28820960698689957,
+ "pi_corrected_upper": 0.747662002358716,
+ "R0": 0.053566418757271535,
+ "R0_pi_corrected_upper": 0.1389598921630241,
+ "R0_ci95_high_pi_corrected": 0.3546850549352775,
+ "judge_pro_sensitivity_worst_case": 0.1658538279146523,
+ "R0_pi_corrected_worst_case": 0.18585924083962396,
+ "R0_ci95_high_pi_corrected_worst_case": 0.4743922438432352
+}

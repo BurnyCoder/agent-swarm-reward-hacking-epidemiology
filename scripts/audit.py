@@ -86,7 +86,10 @@ def score() -> dict:
     prec = (tp, int(rule.sum()))
     rec = (tp, int(human.sum()))
     ci = lambda c, n: [float(x) for x in proportion_confint(c, n, method="wilson")] if n else [None, None]
-    out = {"judge": {"kappa": k, "n": len(ids), "passes_0.61": k >= 0.61},
+    confusion = pd.crosstab(pd.Series([jk[i]["label"] for i in ids], name="judge"),  # where judge and labels differ
+                            pd.Series([jl[i] for i in ids], name="blind")).to_dict("index")
+    out = {"judge": {"kappa": k, "n": len(ids), "passes_0.61": k >= 0.61, "confusion_judge_x_blind": confusion,
+                     "sample": "stratified, up to 70 posts per judge label (kappa is not the natural-mix kappa)"},
            "detector": {"precision": prec[0] / max(prec[1], 1), "precision_ci95": ci(*prec),
                         "recall": rec[0] / max(rec[1], 1), "recall_ci95": ci(*rec), "n": len(did),
                         "passes_0.90_precision": prec[0] / max(prec[1], 1) >= 0.90},

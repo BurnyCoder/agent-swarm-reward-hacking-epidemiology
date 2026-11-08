@@ -1,0 +1,71 @@
+{
+ "h1_power": [
+  {
+   "h1": 0.0,
+   "power": 0.018,
+   "mc_se": 0.004204283529925164,
+   "tost_power": 1.0,
+   "mean_diff": 0.00013796875000000002,
+   "n_sim": 1000
+  },
+  {
+   "h1": 0.01,
+   "power": 0.165,
+   "mc_se": 0.011737759581794134,
+   "tost_power": 1.0,
+   "mean_diff": 0.006358124999999999,
+   "n_sim": 1000
+  },
+  {
+   "h1": 0.02,
+   "power": 0.513,
+   "mc_se": 0.015806043148112688,
+   "tost_power": 1.0,
+   "mean_diff": 0.01252421875,
+   "n_sim": 1000
+  },
+  {
+   "h1": 0.05,
+   "power": 0.997,
+   "mc_se": 0.0017294507798720387,
+   "tost_power": 1.0,
+   "mean_diff": 0.0318103125,
+   "n_sim": 1000
+  },
+  {
+   "h1": 0.1,
+   "power": 1.0,
+   "mc_se": 0.0,
+   "tost_power": 1.0,
+   "mean_diff": 0.06595796875,
+   "n_sim": 1000
+  },
+  {
+   "h1": 0.2,
+   "power": 1.0,
+   "mc_se": 0.0,
+   "tost_power": 0.0,
+   "mean_diff": 0.13654484374999998,
+   "n_sim": 1000
+  }
+ ],
+ "identifiability": {
+  "per_family": {
+   "linear": 0.86,
+   "exponential": 0.56,
+   "logistic": 0.29,
+   "gompertz": 0.37,
+   "ggm": 0.78,
+   "bass": 0.74,
+   "richards": 0.85
+  },
+  "overall": 0.6357142857142858,
+  "passes_80pct": false
+ },
+ "eps": 0.1,
+ "assumed": {
+  "pi_h": 0.5,
+  "pi_n": 0.02
+ },
+ "recover": 0.9071207430340558
+}

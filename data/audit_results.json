@@ -1,0 +1,40 @@
+{
+ "judge": {
+  "kappa": 0.7642857142857141,
+  "n": 210,
+  "passes_0.61": true,
+  "confusion_judge_x_blind": {
+   "anti": {
+    "anti": 67,
+    "neutral": 3,
+    "pro": 0
+   },
+   "neutral": {
+    "anti": 4,
+    "neutral": 40,
+    "pro": 26
+   },
+   "pro": {
+    "anti": 0,
+    "neutral": 0,
+    "pro": 70
+   }
+  },
+  "sample": "stratified, up to 70 posts per judge label (kappa is not the natural-mix kappa)"
+ },
+ "detector": {
+  "precision": 1.0,
+  "precision_ci95": [
+   0.9756625486776705,
+   1.0
+  ],
+  "recall": 0.9746835443037974,
+  "recall_ci95": [
+   0.9367211009939063,
+   0.9901118693279107
+  ],
+  "n": 229,
+  "passes_0.90_precision": true
+ },
+ "labeller": "Claude (blind to condition, round, judge/detector output); see reports/deviations.md #7"
+}
