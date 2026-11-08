@@ -89,9 +89,17 @@ class LLM:
         (https://docs.vllm.ai/en/latest/serving/openai_compatible_server/#tokenizer-api) applies the same chat
         template to `messages` and returns {"count", "max_model_len", ...}, so the clamp is exact.
         """
-        r = await self.http.post(self.tokenize_url, json={  # same template + kwargs as the completion request
-            "model": self.cfg.model, "messages": messages, "add_generation_prompt": True,
-            "chat_template_kwargs": template_kwargs})
+        body = {"model": self.cfg.model, "messages": messages, "add_generation_prompt": True,
+                "chat_template_kwargs": template_kwargs}  # same template + kwargs as the completion request
+        for attempt in range(self.cfg.max_retries + 1):  # retry transient transport errors, like the OpenAI SDK does
+            try:
+                r = await self.http.post(self.tokenize_url, json=body)
+                break
+            except httpx.TransportError as e:  # e.g. RemoteProtocolError when the server drops a kept-alive
+                if attempt == self.cfg.max_retries:  # connection (https://www.python-httpx.org/exceptions/)
+                    raise
+                log.warning("tokenize retry %d after %r", attempt + 1, e)
+                await asyncio.sleep(0.5 * 2**attempt)  # exponential backoff
         r.raise_for_status()  # surface server errors
         d = r.json()  # {"count": n_prompt_tokens, "max_model_len": L, "tokens": [...]}
         room = d["max_model_len"] - d["count"]  # tokens left for the output
