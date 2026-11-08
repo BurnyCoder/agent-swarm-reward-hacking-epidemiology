@@ -40,6 +40,8 @@ ROOT = Path(__file__).resolve().parents[1]  # repository root (Typst project roo
 PAPER = ROOT / "paper"  # paper sources and outputs
 FIG_NAMES = ("fig_prevalence.png", "fig_dose_response.png", "fig_hazard.png", "fig_h5_prediction.png",
              "fig_mechanisms.png")  # figures written by swarm_epi.figures.make_all and referenced by paper.typ
+EXPLORE_FIGS = ("fig_prevalence.png", "fig_hazard.png", "fig_flag_rate.png")  # exploratory batch (results/explore),
+# copied as explore_<name> (deviation #13)
 ALPHA = 0.05  # family-wise / per-test level of the preregistered decision rules (§9.6, §13)
 
 
@@ -219,12 +221,14 @@ def sync_figures(results: Path) -> list[str]:
     """
     dst = PAPER / "figures"
     dst.mkdir(parents=True, exist_ok=True)
-    present = [n for n in FIG_NAMES if (results / "figures" / n).exists()]  # figures run_all/make_all produced
+    src = {n: results / "figures" / n for n in FIG_NAMES}  # paper name -> results file (run_all/make_all)
+    src |= {f"explore_{n}": results / "explore" / "figures" / n for n in EXPLORE_FIGS}  # exploratory batch
+    present = [n for n, f in src.items() if f.exists()]
     for p in dst.glob("*.png"):  # remove figures from an earlier build that no longer exist in results
         if p.name not in present:
             p.unlink()
     for n in present:
-        shutil.copy2(results / "figures" / n, dst / n)  # copy with timestamps (reproducible provenance)
+        shutil.copy2(src[n], dst / n)  # copy with timestamps (reproducible provenance)
     return present
 
 
@@ -242,6 +246,8 @@ def collect(results: Path, data: Path) -> dict:
                           "pools": pools_summary(read_json(data / "pools.json"))},
         "derived": {"prevalence": condition_prevalence(results, d["T"]), "h5_predicted": h5_predicted(summary, d["N"])},
         "verdicts": verdicts(summary),
+        "explore": read_json(results / "explore" / "summary.json"),  # exploratory batch (deviation #13), not pooled
+        "explore_derived": {"prevalence": condition_prevalence(results / "explore", d["T"])},
         "engineering": engineering or None,
         "figures": sync_figures(results),
     })
