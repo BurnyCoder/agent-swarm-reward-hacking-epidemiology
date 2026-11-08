@@ -70,6 +70,9 @@ def load_namespace() -> dict:
             d = _safe(json.loads(p.read_text(encoding="utf-8")))  # nested gaps render as n/a
             ns[p.stem] = d  # short key, e.g. `length_probe`
             ns[f"{p.parent.name}_{p.stem}"] = d  # folder-qualified key, e.g. `explore_summary` vs `results_summary`
+    paper = ROOT / "paper" / "data.json"  # written by make_paper.py: holds the preregistered verdicts (§13)
+    if paper.exists():
+        ns["paper_data"] = _safe(json.loads(paper.read_text(encoding="utf-8")))
     return ns
 
 
