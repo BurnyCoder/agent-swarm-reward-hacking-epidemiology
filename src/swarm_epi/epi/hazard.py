@@ -137,10 +137,16 @@ def hazard_ratio(res, col: str) -> dict:
 
 def marginal_h1(res, col: str) -> float:
     """Average marginal increase in hazard from one more post: mean over the risk set of P(eta+b) - P(eta),
-    with P(eta) = 1 - exp(-exp(eta)) (prereg §7.3)."""
-    eta = res.design_frame.values @ res.params.values  # linear predictor per row
+    with P(eta) = 1 - exp(-exp(eta)) (prereg §7.3).
+
+    Rows dropped before fitting because their fixed-effect level has no outcome variation (`n_dropped`) still belong to
+    the risk set. At the MLE their fixed effect is -inf (all 0) or +inf (all 1), so one more post changes their hazard
+    by 0; they enter the mean as zeros. Averaging only over the fitted rows would overstate h1 by the factor
+    (fitted + dropped) / fitted.
+    """
+    eta = res.design_frame.values @ res.params.values  # linear predictor per fitted row
     p = lambda e: 1 - np.exp(-np.exp(e))
-    return float(np.mean(p(eta + res.params[col]) - p(eta)))
+    return float(np.sum(p(eta + res.params[col]) - p(eta)) / (len(eta) + res.n_dropped))
 
 
 def direct_mle(df: pd.DataFrame, slopes: list[str], fe: tuple[str, ...] = ("round",)) -> pd.Series:
