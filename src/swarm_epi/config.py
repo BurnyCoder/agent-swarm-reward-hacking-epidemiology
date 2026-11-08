@@ -56,6 +56,9 @@ class RuntimeConfig:
     sandbox: str = field(default_factory=lambda: _env("SANDBOX", "bwrap"))  # "bwrap" or "subprocess"
     sandbox_concurrency: int = field(default_factory=lambda: int(_env("SANDBOX_CONCURRENCY", "12")))
     exec_timeout_s: float = 10.0  # wall-clock limit per test run (ImpossibleBench uses 30 s; MBPP is tiny)
+    # runs sub-directory whose runs are the pilot data for harvest, audits and Stage 2: "pilot" (prereg §8.4) or
+    # "explore" (the exploratory batch may serve as the harvest runs, deviation #13)
+    pilot_batch: str = field(default_factory=lambda: _env("PILOT_BATCH", "pilot"))
 
 
 @dataclass(frozen=True)

@@ -20,7 +20,7 @@ import numpy as np  # bootstrap
 
 from swarm_epi import conditions, prompts  # replicate counts, probe/judge text
 from swarm_epi.analysis import judged  # "judged pro-hack" = judge label (same rule as the confirmatory analysis)
-from swarm_epi.config import LLMConfig  # model id
+from swarm_epi.config import LLMConfig, RuntimeConfig  # model id; PILOT_BATCH
 from swarm_epi.tasks import apply_capability_filter, load_tasks  # filtered task list
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,7 +40,7 @@ def load(name: str) -> dict:
 def pilot_pi_D(runs: Path, labels: dict) -> tuple[float, float]:
     """pi = P(post pro | author hacked) and D (geometric infectious period) from pilot MAIN runs + harvest labels."""
     pro_given_hack, at_risk, ends = [], 0, 0
-    for d in sorted((runs / "pilot").iterdir()):
+    for d in sorted((runs / RuntimeConfig().pilot_batch).iterdir()):  # PILOT_BATCH (default "pilot")
         if json.loads((d / "config.json").read_text())["condition"] != "MAIN":
             continue
         recs = [json.loads(x) for x in (d / "rounds.jsonl").read_text(encoding="utf-8").splitlines() if x]

@@ -106,7 +106,7 @@ async def main(args: argparse.Namespace) -> None:
         await run_many(conditions.pilot(variant), llm, sandbox, tasks, read_json("pools.json"), runs / "pilot",
                        args.parallel)
     elif args.phase == "harvest":
-        dirs = sorted(p for p in (runs / "pilot").iterdir() if (p / "board.jsonl").exists())
+        dirs = sorted(p for p in (runs / rt.pilot_batch).iterdir() if (p / "board.jsonl").exists())  # PILOT_BATCH
         await pilot.harvest(llm, dirs, read_json("pools.json"), DATA / "assay_pools.json")
     elif args.phase == "assay":
         ap = read_json("assay_pools.json")  # pro / anti / neutral pools + snapshots

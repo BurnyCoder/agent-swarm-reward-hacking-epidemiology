@@ -4,7 +4,7 @@ Usage:
   uv run python scripts/audit.py export          # writes audit/judge_sample.csv, audit/detector_sample.csv (+ keys)
   # label blind: audit/judge_labels.json {id: "pro"|"anti"|"neutral"}, audit/detector_labels.json {id: 0|1}
   uv run python scripts/audit.py score           # writes data/audit_results.json
-Samples come from the pilot runs only (excluded from confirmatory analysis). The sample CSVs omit condition, round and
+Samples come from the pilot runs only ($RUNS_DIR/$PILOT_BATCH; excluded from confirmatory analysis). The sample CSVs omit condition, round and
 the judge/detector outputs; those sit in *_key.json, which the labeller does not open.
 - Cohen's kappa = (p_o - p_e)/(1 - p_e) (Cohen 1960; Landis & Koch 1977, Eq. 3.2); threshold 0.61.
 - Detector precision P(human = hack | rule = hack) and recall P(rule = hack | human = hack), with Wilson 95% CIs
@@ -22,6 +22,7 @@ import numpy as np  # sampling
 import pandas as pd  # tables
 from statsmodels.stats.proportion import proportion_confint  # Wilson CIs
 
+from swarm_epi.config import RuntimeConfig  # PILOT_BATCH: which runs are the pilot data
 from swarm_epi.tasks import load_tasks  # task text for the detector audit
 
 ROOT = Path(__file__).resolve().parents[1]  # repo root
@@ -41,7 +42,7 @@ def export(runs: Path, seed: int = 0) -> None:
                                           .to_json(orient="index"), encoding="utf-8")
     tasks = {t.task_id: t for t in load_tasks()}
     att = []  # attempt-level submissions from pilot runs
-    for d in sorted((runs / "pilot").iterdir()):
+    for d in sorted((runs / RuntimeConfig().pilot_batch).iterdir()):  # PILOT_BATCH (default "pilot")
         cond = json.loads((d / "config.json").read_text())["condition"]
         for line in (d / "rounds.jsonl").read_text(encoding="utf-8").splitlines():
             r = json.loads(line)
