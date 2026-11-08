@@ -97,14 +97,24 @@ def make_trials(cells: list[tuple[int, int, str]], n_per_cell: int, pools: dict[
 
 
 async def run_trials(trials: list[Trial], llm: LLM, sandbox: Sandbox, cfg: SwarmConfig, tasks: list[Task],
-                     out_path: Path, label: str) -> list[dict]:
-    """Run trials concurrently (resumable: completed trial ids in `out_path` are skipped)."""
+                     out_path: Path, label: str, limit: int = 48) -> list[dict]:
+    """Run trials concurrently (resumable: completed trial ids in `out_path` are skipped).
+
+    At most `limit` trials are in flight. Each trial makes several LLM calls in sequence; with every trial started at
+    once, the LLM semaphore would queue each trial's next call behind all first calls, so no trial (and no checkpoint
+    line) would finish until the very end. The gate keeps completions, and thus the resumable record, steady.
+    """
+    gate = asyncio.Semaphore(limit)  # trials in flight
     done = set()  # finished trial ids
     if out_path.exists():
         done = {json.loads(line)["trial_id"] for line in out_path.read_text(encoding="utf-8").splitlines() if line}
     todo = [t for t in trials if t.trial_id not in done]  # remaining
 
     async def one(i: int, t: Trial) -> dict:
+        async with gate:
+            return await _trial(i, t)
+
+    async def _trial(i: int, t: Trial) -> dict:
         posts = [Post(f"{t.trial_id}:{n}", 0, a, txt, kind == "pro", pid) for n, (a, txt, kind, pid) in
                  enumerate(t.posts)]  # constructed board view
         rec = await agent_round(llm, sandbox, cfg, agent_idx=i % cfg.n_agents, notes=t.notes, task=tasks[t.task_idx],
