@@ -39,7 +39,7 @@ from swarm_epi.tasks import apply_capability_filter  # preregistered capability 
 ROOT = Path(__file__).resolve().parents[1]  # repository root (Typst project root, so paths cannot escape it)
 PAPER = ROOT / "paper"  # paper sources and outputs
 FIG_NAMES = ("fig_prevalence.png", "fig_dose_response.png", "fig_hazard.png", "fig_h5_prediction.png",
-             "fig_mechanisms.png")  # figures written by swarm_epi.figures.make_all and referenced by paper.typ
+             "fig_mechanisms.png", "fig_flag_rate.png")  # written by swarm_epi.figures.make_all, used by paper.typ
 EXPLORE_FIGS = ("fig_prevalence.png", "fig_hazard.png", "fig_flag_rate.png")  # exploratory batch (results/explore),
 # copied as explore_<name> (deviation #13)
 ALPHA = 0.05  # family-wise / per-test level of the preregistered decision rules (§9.6, §13)

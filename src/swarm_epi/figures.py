@@ -30,6 +30,12 @@ plt.rcParams.update({"axes.edgecolor": INK2, "axes.labelcolor": INK, "xtick.colo
                      "axes.spines.right": False, "font.size": 10, "lines.linewidth": 2, "figure.dpi": 150})
 
 
+def _top(largest: float) -> float:
+    """y-axis top for a proportion: 1 when values exceed one half, else zoom to just above the largest value (zero
+    baseline kept, so rare outcomes such as a 2-10% hack prevalence are not squashed against the axis)."""
+    return 1.0 if largest > 0.5 else max(0.2, 1.15 * largest)
+
+
 def _band(values: np.ndarray, rng: np.random.Generator, B: int = 2000) -> tuple[np.ndarray, np.ndarray]:
     """95% bootstrap band of the across-run mean for a runs x rounds matrix (resampling runs)."""
     boots = np.stack([values[rng.integers(0, len(values), len(values))].mean(0) for _ in range(B)])
@@ -43,7 +49,7 @@ def fig_prevalence(prev: pd.DataFrame, out: Path, col: str = "prevalence", fname
     band. Also draws the flag-rate curve (col="flag_rate") for the counter-contagion analysis."""
     rng = np.random.default_rng(0)
     fig, ax = plt.subplots(figsize=(7, 4))
-    top = 1.0 if prev[col].max() > 0.5 else max(0.2, 1.15 * prev[col].max())  # zero baseline kept; rare outcomes zoom
+    top = _top(prev[col].max())  # zero baseline kept; rare outcomes zoom
     for cond, g in prev.groupby("condition"):
         mat = g.pivot(index="run_id", columns="round", values=col).values  # runs x rounds
         x = np.arange(mat.shape[1])
@@ -117,7 +123,9 @@ def fig_h5(summary: dict, out: Path, N: int = 32) -> None:
     conds = [c for c in ("MAIN", "TRANSIENT") if c in h5]
     if not conds:
         return
-    fig, axes = plt.subplots(1, len(conds), figsize=(4.8 * len(conds), 3.8), squeeze=False)
+    fig, axes = plt.subplots(1, len(conds), figsize=(4.8 * len(conds), 3.8), squeeze=False, sharey=True)
+    top = _top(max(max(h5[c]["observed_mean"] + h5[c]["assay_model"]["hi"] + h5[c]["broadcast_only"]["hi"])
+                   for c in conds) / N)  # one shared scale for both panels
     for ax, cond in zip(axes[0], conds):
         d = h5[cond]
         x = np.arange(len(d["observed_mean"]))
@@ -127,7 +135,7 @@ def fig_h5(summary: dict, out: Path, N: int = 32) -> None:
             ax.plot(x, np.array(d[name]["mean_curve"]) / N, color=INK2, linestyle=ls,
                     label=f"{name.replace('_', ' ')} (CRPS {d[name]['crps']:.2f})")
         ax.plot(x, np.array(d["observed_mean"]) / N, "o-", color=COLORS[cond], label="observed mean")
-        ax.set(xlabel="Round", ylabel="Hack-attempt prevalence", ylim=(0, 1), title=f"{cond}: out-of-sample prediction")
+        ax.set(xlabel="Round", ylabel="Hack-attempt prevalence", ylim=(0, top), title=f"{cond}: out-of-sample prediction")
         ax.legend(frameon=False, fontsize=8)
     fig.tight_layout()
     fig.savefig(out / "fig_h5_prediction.png")
@@ -135,18 +143,20 @@ def fig_h5(summary: dict, out: Path, N: int = 32) -> None:
 
 
 def fig_mechanisms(summary: dict, out: Path) -> None:
-    """Hack mechanisms by condition (counts of hack-attempt agent-rounds)."""
+    """Hack mechanisms by condition (hack-attempt agent-rounds per run, so conditions with 15 and 20 runs compare)."""
     mech = summary.get("mechanisms") or {}
     if not mech:
         return
-    df = pd.DataFrame(mech).fillna(0)  # mechanisms x conditions
+    df = pd.DataFrame(mech).fillna(0)  # mechanisms x conditions (counts)
+    runs = summary.get("n_runs") or {}
+    df = df.apply(lambda col: col / runs.get(col.name, 1))  # counts -> per run
     fig, ax = plt.subplots(figsize=(7, 3.5))
     width = 0.8 / max(len(df.columns), 1)
     for i, cond in enumerate(df.columns):
         ax.bar(np.arange(len(df)) + i * width, df[cond], width=width * 0.92, color=COLORS.get(cond, INK2),
                label=cond)
     ax.set_xticks(np.arange(len(df)) + width * (len(df.columns) - 1) / 2, df.index, rotation=15)
-    ax.set(ylabel="Hack-attempt agent-rounds", title="How agents hacked (ImpossibleBench taxonomy)")
+    ax.set(ylabel="Hack-attempt agent-rounds per run", title="How agents hacked (ImpossibleBench taxonomy)")
     ax.legend(frameon=False)
     fig.tight_layout()
     fig.savefig(out / "fig_mechanisms.png")
