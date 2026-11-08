@@ -31,6 +31,7 @@ effect of the cheating message itself.
 | — | [Blinded label audits](preregistration_stage2.md) (deviation #7) | done | agreement of the post judge and hack detector with blind labels | judge κ = 0.76 (n = 210); detector precision 1.00 (n = 229) |
 | 02 | [Dose-response assay](experiments/02_confirmatory_batch1.md) | done (confirmatory) | single-agent infection probability vs number of pro-hack posts read (H4) | P(hack) 4.7% at k = 0 → 41.3% at k = 6; Weibull γ = 1.74 (H4 supported, reinforcing); assay map R_map = 0.30 |
 | 03 | [Confirmatory batch 1](experiments/02_confirmatory_batch1.md) (20/20/15 swarms) | done (confirmatory) | preregistered tests H1–H3, H5 | MAIN − PLACEBO +0.9% [+0.4%, +1.4%] (H1 supported, also equivalent within ±10 pp); hazard ratio per non-seed pro-hack post 1.68 [1.27, 2.23] (H2 supported); R0 0.039 (H3 falsified); assay forecast vs broadcast-only: H5 falsified (MAIN), partial (TRANSIENT) |
+| 04 | Week-phase batch W1 ([preregistration](preregistration_week1.md)): memory off, 4 or 8 seed slots, no seeds, warning against cheating; 6 × 10 CRN-paired swarms | running (exploratory) | which factors drive transmission and the flagging norm | — (report `experiments/03_week1_ablations.md` renders once the batch is analysed) |
 
 ## Conditions (all: 32 agents, 6 posts read per round, rounds 0–10, ≤ 2 attempts per task)
 
