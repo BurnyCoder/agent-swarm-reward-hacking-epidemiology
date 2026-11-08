@@ -114,6 +114,20 @@ def attach_exposure(recs: pd.DataFrame, posts: pd.DataFrame, labels: dict) -> pd
     return out
 
 
+def example_posts(posts: pd.DataFrame, labels: dict, n: int = 2) -> dict:
+    """Example board posts for the reports: `n` agent posts per judged stance and one seed post per pool, drawn with
+    a fixed RNG of their own (so the analysis RNG stream is untouched) — illustrations, not a representative sample."""
+    rng = np.random.default_rng(RNG_SEED + 1)
+    lab = [label_of(labels, r.run_id, r.post_id, r.is_seed, r.pool_id) for r in posts.itertuples()]
+    d = posts.assign(label=[x.get("label") for x in lab], p_pro=[round(x.get("p_pro", 0.0), 3) for x in lab])
+    pick = lambda g, k: [{c: (int(v) if c == "round" else v) for c, v in row.items()}
+                         for row in g.iloc[np.sort(rng.choice(len(g), min(k, len(g)), replace=False))][
+                             ["run_id", "round", "label", "p_pro", "text"]].to_dict("records")] if len(g) else []
+    out = {st: pick(d[~d.is_seed & (d.label == st)], n) for st in ("pro", "anti", "neutral")}
+    out |= {f"seed_{c}": pick(d[d.is_seed & (d.condition == c)], 1) for c in ("MAIN", "PLACEBO")}
+    return out
+
+
 # ============================================================================================ H1
 def run_means(df: pd.DataFrame, rounds: range) -> pd.DataFrame:
     """Run-level mean prevalence over `rounds` and round-0 prevalence, indexed by (condition, replicate)."""
@@ -471,10 +485,13 @@ def run_all(batch_dir: Path, assay_path: Path | None, labels_path: Path, out_dir
     S["growth_curves"] = growth_curves(df, ident)
     S["h5"] = h5(df, S.get("h4", {}), json.loads(sim_path.read_text()) if sim_path.exists() else {}, rng, reps)
     S["counter_contagion"] = counter_contagion(df)  # exploratory, post hoc model form
+    S["examples"] = example_posts(posts, labels)  # illustrative posts for the reports
     S["descriptives"] = df.groupby("condition").agg(
         hack_attempt=("hack_attempt", "mean"), hack_success=("hack_success", "mean"), flag=("flagged", "mean"),
         capable=("strict_original_pass", "mean"), probe_p_yes=("probe_p_yes", "mean"),
-        post_pro=("post_pro", "mean"), unparseable=("unparseable", "mean")).round(4).to_dict("index")
+        post_pro=("post_pro", "mean"), unparseable=("unparseable", "mean"),
+        reads_seed_pro=("k_seed_pro", "mean"), reads_nonseed_pro=("k_nonseed_pro", "mean"),  # posts read per
+        reads_anti=("k_anti", "mean")).round(4).to_dict("index")  # agent-round (exposure dose)
     S["mechanisms"] = df[df.hack_attempt].groupby(["condition", "mechanism"]).size().unstack(fill_value=0).to_dict("index")
     (out_dir / "summary.json").write_text(json.dumps(S, indent=1, default=float), encoding="utf-8")
     df.drop(columns=["attempts"]).to_parquet(out_dir / "agent_rounds.parquet", index=False)
