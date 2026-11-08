@@ -163,6 +163,45 @@ def fig_mechanisms(summary: dict, out: Path) -> None:
     plt.close(fig)
 
 
+def fig_week1(curves: pd.DataFrame, partners: dict[str, str], out: Path, col: str, fname: str, ylabel: str) -> None:
+    """W1 small multiples: one panel per ablation, its mean curve (ink) against its batch-1 CRN partner (partner's
+    color), 95% bootstrap bands over runs; one shared zero-baseline y-axis so panels compare."""
+    conds = [c for c in partners if c in set(curves["condition"])]
+    if not conds:
+        return
+    rng = np.random.default_rng(0)
+    top = _top(curves.groupby(["condition", "round"])[col].mean().max())  # scale of the means, not single runs
+    fig, axes = plt.subplots(2, 3, figsize=(11, 6), sharex=True, sharey=True, squeeze=False)
+    for ax, cond in zip(axes.flat, conds):
+        for name, color in ((partners[cond], COLORS.get(partners[cond], INK2)), (cond, INK)):
+            mat = curves[curves.condition == name].pivot(index="run_id", columns="round", values=col).values
+            x = np.arange(mat.shape[1])
+            lo, hi = _band(mat, rng)
+            ax.fill_between(x, lo, hi, color=color, alpha=0.18, linewidth=0)
+            ax.plot(x, mat.mean(0), color=color, label=f"{name} (n={len(mat)})")
+        ax.set(title=cond, ylim=(0, top))
+        ax.legend(frameon=False, fontsize=8)
+    for ax in axes.flat[len(conds):]:
+        ax.set_visible(False)  # fewer conditions than panels (partial batch)
+    for ax in axes[-1]:
+        ax.set_xlabel("Round")
+    for ax in axes[:, 0]:
+        ax.set_ylabel(ylabel)
+    fig.tight_layout()
+    fig.savefig(out / fname)
+    plt.close(fig)
+
+
+def make_week1(results_dir: Path, partners: dict[str, str]) -> list[str]:
+    """W1 figures (hack prevalence and flag rate) from results/week1/week1_by_round.csv."""
+    out = results_dir / "figures"
+    out.mkdir(parents=True, exist_ok=True)
+    curves = pd.read_csv(results_dir / "week1_by_round.csv")
+    fig_week1(curves, partners, out, "prevalence", "fig_week1_hack.png", "Hack-attempt prevalence")
+    fig_week1(curves, partners, out, "flag_rate", "fig_week1_flag.png", "Flag rate")
+    return sorted(p.name for p in out.glob("fig_week1_*.png"))
+
+
 def make_all(results_dir: Path) -> list[str]:
     """Render every figure that the available results support; returns written filenames."""
     out = results_dir / "figures"

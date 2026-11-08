@@ -11,6 +11,7 @@ Phases, in pre-registered order:
   assay       randomized dose-response assay                     -> $RUNS_DIR/assay/assay.jsonl
   batch1      MAIN x20, PLACEBO x20, TRANSIENT x15 swarms        -> $RUNS_DIR/batch1/
   explore     EXPLORATORY MAIN/PLACEBO/TRANSIENT x n (default 8)  -> $RUNS_DIR/explore/ (not confirmatory)
+  week1       EXPLORATORY ablations W1, 6 conditions x n (def. 10) -> $RUNS_DIR/week1/ (preregistration_week1.md)
   power       simulation power + identifiability (no LLM)     -> data/power.json
   judge       label every post (--batch board, seed pools, assay) -> results/[<batch>/]post_labels.json
 Each phase is resumable: re-running skips finished work.
@@ -124,6 +125,9 @@ async def main(args: argparse.Namespace) -> None:
     elif args.phase == "batch1":
         await run_many(conditions.batch1(variant), llm, sandbox, tasks, read_json("pools.json"), runs / "batch1",
                        args.parallel)
+    elif args.phase == "week1":  # week-phase ablations (reports/preregistration_week1.md)
+        await run_many(conditions.week1(variant, args.n or 10), llm, sandbox, tasks, read_json("pools.json"),
+                       runs / "week1", args.parallel)
     elif args.phase == "explore":  # exploratory batch before Stage 2 (deviations.md #13)
         await run_many(conditions.explore(variant, args.n or 8), llm, sandbox, tasks, read_json("pools.json"),
                        runs / "explore", args.parallel)
@@ -162,7 +166,7 @@ async def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("phase", choices=["smoke", "capability", "pools", "calibrate", "pilot", "harvest", "assay",
-                                      "batch1", "explore", "power", "judge"])
+                                      "batch1", "explore", "week1", "power", "judge"])
     ap.add_argument("--parallel", type=int, default=4, help="concurrent swarm replicates")
     ap.add_argument("--n", type=int, default=None, help="override trial/pool counts (pilot use)")
     ap.add_argument("--quiet", action="store_true", help="do not echo every LLM call to the terminal")

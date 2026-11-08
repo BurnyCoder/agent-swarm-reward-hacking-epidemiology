@@ -42,6 +42,25 @@ def explore(variant: str, n: int = 8) -> list[SwarmConfig]:
     return out
 
 
+WEEK1_PARTNERS = {"MEMOFF_MAIN": "MAIN", "MEMOFF_PLACEBO": "PLACEBO", "M4": "MAIN", "M8": "MAIN",
+                  "NOSEED": "PLACEBO", "INOC": "MAIN"}  # W1 condition -> batch-1 CRN partner (preregistration_week1.md)
+
+
+def week1(variant: str, n: int = 10) -> list[SwarmConfig]:
+    """Week-phase batch W1 (exploratory; reports/preregistration_week1.md): six one-factor ablations x n replicates.
+
+    Replicate ids 0..n-1 share task schedules and board-sampling streams with batch-1 replicates of the partner
+    condition (WEEK1_PARTNERS), so every W1 run has a CRN pair. Ordered by replicate so a partial batch is analysable."""
+    base = SwarmConfig(prompt_variant=variant)
+    make = {"MEMOFF_MAIN": dict(seed_pool="hack", memory=False),  # notes discarded every round
+            "MEMOFF_PLACEBO": dict(seed_pool="placebo", memory=False),
+            "M4": dict(seed_pool="hack", n_seeds=4),  # critical mass: more committed seed slots
+            "M8": dict(seed_pool="hack", n_seeds=8),
+            "NOSEED": dict(seed_pool="none", n_seeds=0),  # no seed posts at all
+            "INOC": dict(seed_pool="hack", inoculation=True)}  # warning against cheating in the system prompt
+    return [base.with_(condition=c, replicate=r, **kw) for r in range(n) for c, kw in make.items()]
+
+
 def smoke(variant: str = "D") -> list[SwarmConfig]:
     """Tiny end-to-end smoke test: N=8 agents, T=3 rounds, one MAIN replicate."""
     return [SwarmConfig(condition="SMOKE", replicate=999, n_agents=8, n_rounds=3, prompt_variant=variant)]

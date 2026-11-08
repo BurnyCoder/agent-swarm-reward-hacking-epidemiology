@@ -129,9 +129,10 @@ def example_posts(posts: pd.DataFrame, labels: dict, n: int = 2) -> dict:
 
 
 # ============================================================================================ H1
-def run_means(df: pd.DataFrame, rounds: range) -> pd.DataFrame:
-    """Run-level mean prevalence over `rounds` and round-0 prevalence, indexed by (condition, replicate)."""
-    prev = df.groupby(["condition", "replicate", "round"])["hack_attempt"].mean().unstack()  # runs x rounds
+def run_means(df: pd.DataFrame, rounds: range, col: str = "hack_attempt") -> pd.DataFrame:
+    """Run-level mean of `col` (default: hack-attempt prevalence) over `rounds` and its round-0 value, indexed by
+    (condition, replicate)."""
+    prev = df.groupby(["condition", "replicate", "round"])[col].mean().unstack()  # runs x rounds
     cols = [c for c in rounds if c in prev.columns]  # rounds present (shorter test runs)
     if not cols:
         return pd.DataFrame(columns=["mean", "round0"])
@@ -499,4 +500,46 @@ def run_all(batch_dir: Path, assay_path: Path | None, labels_path: Path, out_dir
     df.drop(columns=["attempts"]).to_parquet(out_dir / "agent_rounds.parquet", index=False)
     if assay is not None:
         assay.drop(columns=["attempts"]).to_parquet(out_dir / "assay_trials.parquet", index=False)
+    return S
+
+
+# ============================================================================================ week-phase W1
+def week1_contrasts(df: pd.DataFrame, partners: dict[str, str], rng) -> dict:
+    """W1 ablations (reports/preregistration_week1.md §3) on agent-rounds of the W1 runs plus their batch-1 CRN
+    partners: per W1 condition, the paired contrast with its partner on hack-attempt prevalence (primary; exact
+    two-sided sign-flip p, Holm over the fixed family of contrasts) and on flag rate (secondary, Holm likewise), the
+    paired TOST for NOSEED, and the M8 late (rounds 8-10) minus early (rounds 1-3) trend."""
+    df = df.assign(hack_attempt=df["hack_attempt"].astype(float), flagged=df["flagged"].astype(float))
+    T = int(df["round"].max())  # last round (10 in the preregistered design)
+    out = {"n_runs": df.groupby("condition")["run_id"].nunique().to_dict(), "partners": partners, "contrasts": {}}
+    for col, name in (("hack_attempt", "hack"), ("flagged", "flag")):
+        rm = run_means(df, range(1, T + 1), col)
+        for c, ref in partners.items():
+            out["contrasts"].setdefault(c, {"ref": ref})[name] = paired(rm, c, ref, rng)
+        ps = {c: out["contrasts"][c][name].get("p_signflip_two_sided") for c in partners}
+        out[f"holm_{name}"] = stats.holm_family(ps, tuple(partners))  # missing contrast enters as p = 1
+    if "M8" in out["n_runs"]:  # subcriticality check: does prevalence grow within M8 runs?
+        late = run_means(df, range(T - 2, T + 1)).loc["M8", "mean"]
+        early = run_means(df, range(1, 4)).loc["M8", "mean"]
+        out["m8_late_minus_early"] = stats.compare_paired(late.values, early.loc[late.index].values, rng=rng)
+    return out
+
+
+def run_week1(week_dir: Path, batch_dir: Path, out_dir: Path, partners: dict[str, str]) -> dict:
+    """Load the W1 runs and their batch-1 partners (same replicate ids), write results/week1/summary.json and the
+    per-run, per-round curves (week1_by_round.csv) that the W1 figures read."""
+    rng = np.random.default_rng(RNG_SEED)
+    wk, _ = load_runs(week_dir)
+    if wk.empty:
+        return {}
+    b1, _ = load_runs(batch_dir)
+    b1 = b1[b1["replicate"].isin(set(wk["replicate"])) & b1["condition"].isin(set(partners.values()))]
+    df = pd.concat([wk, b1], ignore_index=True)
+    S = week1_contrasts(df, partners, rng)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    curves = (df.assign(flagged=df["flagged"].astype(float), hack_attempt=df["hack_attempt"].astype(float))
+              .groupby(["condition", "run_id", "round"])[["hack_attempt", "flagged"]].mean().reset_index()
+              .rename(columns={"hack_attempt": "prevalence", "flagged": "flag_rate"}))
+    curves.to_csv(out_dir / "week1_by_round.csv", index=False)
+    (out_dir / "summary.json").write_text(json.dumps(S, indent=1, default=float), encoding="utf-8")
     return S

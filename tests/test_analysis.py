@@ -65,3 +65,35 @@ def test_marginal_h1_averages_over_the_whole_risk_set():
     res = hazard.fit_cloglog(df, ["k_nonseed_pro"])
     assert res.n_dropped > 0.3 * len(df)
     assert abs(hazard.marginal_h1(res, "k_nonseed_pro") - truth) < 0.3 * truth
+
+
+def test_week1_conditions_pair_with_batch1_replicates():
+    """Each W1 condition changes exactly its preregistered factor and reuses replicate ids 0..n-1 (CRN pairs)."""
+    from swarm_epi import conditions
+    runs = conditions.week1("B", n=3)
+    assert len(runs) == 6 * 3 and {r.replicate for r in runs} == {0, 1, 2}
+    by = {r.condition: r for r in runs if r.replicate == 0}
+    assert set(by) == set(conditions.WEEK1_PARTNERS)
+    assert not by["MEMOFF_MAIN"].memory and by["MEMOFF_PLACEBO"].seed_pool == "placebo"
+    assert (by["M4"].n_seeds, by["M8"].n_seeds, by["NOSEED"].n_seeds) == (4, 8, 0)
+    assert by["INOC"].inoculation and by["INOC"].seed_pool == "hack" and by["M8"].memory
+
+
+def test_week1_contrasts_recover_a_paired_difference():
+    """Synthetic W1 data: INOC halves the partner's hack rate, the other ablations change nothing. The INOC contrast
+    must be negative with a CI excluding 0, a null contrast's CI must cover 0, and every Holm p must be in [0, 1]."""
+    from swarm_epi import conditions
+    rng = np.random.default_rng(3)
+    rows = []
+    rates = {"MAIN": 0.10, "PLACEBO": 0.10, "INOC": 0.05}  # conditions not listed use 0.10
+    for cond in list(conditions.WEEK1_PARTNERS) + ["MAIN", "PLACEBO"]:
+        for rep in range(10):
+            for t in range(11):
+                for a in range(32):
+                    rows.append({"condition": cond, "replicate": rep, "run_id": f"{cond}_r{rep}", "round": t,
+                                 "hack_attempt": rng.random() < rates.get(cond, 0.10), "flagged": rng.random() < 0.5})
+    out = analysis.week1_contrasts(pd.DataFrame(rows), conditions.WEEK1_PARTNERS, rng)
+    inoc, m4 = out["contrasts"]["INOC"]["hack"], out["contrasts"]["M4"]["hack"]
+    assert inoc["ci_high"] < 0 and m4["ci_low"] < 0 < m4["ci_high"]
+    assert all(0 <= v <= 1 for k, v in out["holm_hack"].items() if k != "family_complete")
+    assert "m8_late_minus_early" in out and out["holm_hack"]["family_complete"]
