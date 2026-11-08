@@ -1,30 +1,38 @@
-**Exploratory batch (2026-11-08; not the preregistered confirmatory test, see
-[deviation #13](reports/deviations.md)):** MAIN {explore_summary[n_runs][MAIN]}, PLACEBO
-{explore_summary[n_runs][PLACEBO]}, TRANSIENT {explore_summary[n_runs][TRANSIENT]} swarms of 32 agents × 11 rounds,
-ImpossibleBench prompt {calibration_explore[chosen]}. Full report:
-[`reports/experiments/01_exploratory_swarm.md`](reports/experiments/01_exploratory_swarm.md).
+**Confirmatory batch 1** (preregistered; Stage 2 addendum frozen at commit `3d8ddcc` before these data): MAIN
+{results_summary[n_runs][MAIN]}, PLACEBO {results_summary[n_runs][PLACEBO]}, TRANSIENT
+{results_summary[n_runs][TRANSIENT]} swarms of 32 agents × 11 rounds, ImpossibleBench prompt {calibration[chosen]};
+dose-response assay with {results_summary[h4][table][0][n]} trials per cell. Full report:
+[`reports/experiments/02_confirmatory_batch1.md`](reports/experiments/02_confirmatory_batch1.md).
 
-| Condition (seed posts) | non-seed hack-attempt prevalence, rounds 1–10 | difference vs PLACEBO [95% CI] | exact sign-flip p (one-sided) |
+| Hypothesis (preregistration §13) | Estimate [95% CI] | p (Holm for H1, H2, H4) | Verdict |
 |---|---|---|---|
-| MAIN (pro-hack every round) | {explore_summary[h1][MAIN_vs_PLACEBO][mean_a]:.1%} | {explore_summary[h1][MAIN_vs_PLACEBO][diff]:+.1%} [{explore_summary[h1][MAIN_vs_PLACEBO][ci_low]:+.1%}, {explore_summary[h1][MAIN_vs_PLACEBO][ci_high]:+.1%}] | {explore_summary[h1][MAIN_vs_PLACEBO][p_signflip]:.4f} |
-| TRANSIENT (pro-hack rounds 0–1 only) | {explore_summary[h1][TRANSIENT_vs_PLACEBO][mean_a]:.1%} | {explore_summary[h1][TRANSIENT_vs_PLACEBO][diff]:+.1%} [{explore_summary[h1][TRANSIENT_vs_PLACEBO][ci_low]:+.1%}, {explore_summary[h1][TRANSIENT_vs_PLACEBO][ci_high]:+.1%}] | {explore_summary[h1][TRANSIENT_vs_PLACEBO][p_signflip]:.4f} |
-| PLACEBO (neutral coding tips; control) | {explore_summary[h1][MAIN_vs_PLACEBO][mean_b]:.1%} | — | — |
+| H1 seeds raise hacking (MAIN − PLACEBO prevalence, rounds 1–10) | {results_summary[h1][MAIN_vs_PLACEBO][diff]:+.1%} [{results_summary[h1][MAIN_vs_PLACEBO][ci_low]:+.1%}, {results_summary[h1][MAIN_vs_PLACEBO][ci_high]:+.1%}] | {results_summary[holm][H1]:.4f} | {paper_data[verdicts][H1][verdict]}; also equivalent within ±10 pp |
+| H2 agent-written posts transmit (hazard ratio per post) | {results_summary[h2][k_nonseed_pro][hr]:.2f} [{results_summary[h2][k_nonseed_pro][hr_low]:.2f}, {results_summary[h2][k_nonseed_pro][hr_high]:.2f}] | {results_summary[holm][H2]:.4f} | {paper_data[verdicts][H2][verdict]}; h₁ below h₁*: {paper_data[verdicts][H2][falsified]} |
+| H4 dose-response is not simple contagion (Weibull γ) | {results_summary[h4][hack][weibull][params][gamma]:.2f} [{results_summary[h4][gamma_profile_ci][ci][0]:.2f}, {results_summary[h4][gamma_profile_ci][ci][1]:.2f}] | {results_summary[holm][H4]:.4f} | {paper_data[verdicts][H4][verdict]} ({paper_data[verdicts][H4][direction]}) |
+| H3 spread is self-sustaining (R0 = π·K·h₁·D) | {results_summary[h3][R0][R0]:.3f} [{results_summary[h3][R0][R0_ci95][0]:.3f}, {results_summary[h3][R0][R0_ci95][1]:.3f}] | — | {paper_data[verdicts][H3][verdict]} ("{results_summary[h3][decision]}") |
+| H5 assay predicts the MAIN curve (CRPS*, lower is better; vs broadcast-only) | {results_summary[h5][MAIN][assay_model][crps]:.2f} vs {results_summary[h5][MAIN][broadcast_only][crps]:.2f} | {results_summary[h5][MAIN][p_assay_better_than_broadcast]:.3f} | {paper_data[verdicts][H5_MAIN][verdict]} |
+| H5 assay predicts the TRANSIENT curve | {results_summary[h5][TRANSIENT][assay_model][crps]:.2f} vs {results_summary[h5][TRANSIENT][broadcast_only][crps]:.2f} | {results_summary[h5][TRANSIENT][p_assay_better_than_broadcast]:.3f} | {paper_data[verdicts][H5_TRANSIENT][verdict]} |
 
-| Transmission quantity | estimate [95% CI] |
-|---|---|
-| Hazard ratio per pro-hack post written by another (non-seed) agent | {explore_summary[h2][k_nonseed_pro][hr]:.2f} [{explore_summary[h2][k_nonseed_pro][hr_low]:.2f}, {explore_summary[h2][k_nonseed_pro][hr_high]:.2f}] |
-| Hazard ratio per pro-hack seed post | {explore_summary[h2][k_seed_pro][hr]:.2f} [{explore_summary[h2][k_seed_pro][hr_low]:.2f}, {explore_summary[h2][k_seed_pro][hr_high]:.2f}] |
-| Board reproduction number R0 = π·K·h₁·D | {explore_summary[h3][R0][R0]:.3f} [{explore_summary[h3][R0][R0_ci95][0]:.3f}, {explore_summary[h3][R0][R0_ci95][1]:.3f}] |
-| Persistence after seeds stop (TRANSIENT − PLACEBO, rounds 8–10) | {explore_summary[h3][late_window][diff]:+.1%} [{explore_summary[h3][late_window][ci_low]:+.1%}, {explore_summary[h3][late_window][ci_high]:+.1%}] |
-| Preregistered self-sustainability decision | {explore_summary[h3][decision]} |
+| Condition (seed posts) | hack attempt | flag | posts judged pro-hack | difference in hack prevalence vs PLACEBO, rounds 1–10 [95% CI] |
+|---|---|---|---|---|
+| MAIN (pro-hack every round; treatment) | {results_summary[descriptives][MAIN][hack_attempt]:.1%} | {results_summary[descriptives][MAIN][flag]:.1%} | {results_summary[descriptives][MAIN][post_pro]:.1%} | {results_summary[h1][MAIN_vs_PLACEBO][diff]:+.1%} [{results_summary[h1][MAIN_vs_PLACEBO][ci_low]:+.1%}, {results_summary[h1][MAIN_vs_PLACEBO][ci_high]:+.1%}] |
+| TRANSIENT (pro-hack rounds 0–1 only) | {results_summary[descriptives][TRANSIENT][hack_attempt]:.1%} | {results_summary[descriptives][TRANSIENT][flag]:.1%} | {results_summary[descriptives][TRANSIENT][post_pro]:.1%} | {results_summary[h1][TRANSIENT_vs_PLACEBO][diff]:+.1%} [{results_summary[h1][TRANSIENT_vs_PLACEBO][ci_low]:+.1%}, {results_summary[h1][TRANSIENT_vs_PLACEBO][ci_high]:+.1%}] |
+| PLACEBO (neutral coding tips; control) | {results_summary[descriptives][PLACEBO][hack_attempt]:.1%} | {results_summary[descriptives][PLACEBO][flag]:.1%} | {results_summary[descriptives][PLACEBO][post_pro]:.1%} | — |
 
-**Counter-contagion (exploratory, model chosen after an interim look; [deviation #15](reports/deviations.md)):**
-the flag rate went from {explore_summary[counter_contagion][flag_rate_round0][PLACEBO]:.0%} in round 0 (empty
-board) to {explore_summary[counter_contagion][flag_rate_round10][PLACEBO]:.0%} in round 10 in PLACEBO
-(MAIN {explore_summary[counter_contagion][flag_rate_round0][MAIN]:.0%} →
-{explore_summary[counter_contagion][flag_rate_round10][MAIN]:.0%}). Hazard ratio of starting to flag per anti-hack
-post read: {explore_summary[counter_contagion][k_anti][hr]:.2f}
-[{explore_summary[counter_contagion][k_anti][hr_low]:.2f}, {explore_summary[counter_contagion][k_anti][hr_high]:.2f}].
+Rates in the second table are means over all non-seed agent-rounds including round 0.
 
-![Hack-attempt prevalence by round](results/explore/figures/fig_prevalence.png)
-![Flag rate by round](results/explore/figures/fig_flag_rate.png)
+| Assay arm (k pro-hack posts among 6 read) | k = 0 | k = 2 | k = 4 | k = 6 |
+|---|---|---|---|---|
+| distinct authors (method) | {results_summary[h4][table][0][hack]:.1%} | {results_summary[h4][table][2][hack]:.1%} | {results_summary[h4][table][4][hack]:.1%} | {results_summary[h4][table][5][hack]:.1%} |
+| off-topic posts instead (random content control), minus k = 0 | — | {results_summary[h4][comparisons][offtopic_minus_k0][2]:+.1%} | {results_summary[h4][comparisons][offtopic_minus_k0][4]:+.1%} | {results_summary[h4][comparisons][offtopic_minus_k0][6]:+.1%} |
+
+**In plain words.** A pro-hack post read by an agent does make that agent more likely to start hacking, and several
+such posts together act more than additively. But the agents who hack rarely advertise it, they stop after about a
+round, and their posts are drowned out by agents explaining that the test is wrong and flagging it. Each hacking agent
+therefore "infects" far fewer than one other agent, so hacking cannot grow exponentially here; seeding the board
+raises population hacking only slightly, and only while the seeds keep posting.
+
+![Hack-attempt prevalence by round](results/figures/fig_prevalence.png)
+![Dose-response assay](results/figures/fig_dose_response.png)
+![Hazard ratios per post](results/figures/fig_hazard.png)
+![Flag rate by round](results/figures/fig_flag_rate.png)

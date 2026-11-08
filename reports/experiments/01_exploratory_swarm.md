@@ -11,8 +11,11 @@
 
 ## Findings in brief
 
-Exploratory batch: 8 runs per condition, judge and hack-detector labels not yet audited. Read every claim below as
-evidence from this batch, not as a confirmatory result.
+Exploratory batch: 8 runs per condition. Its labels were audited afterwards, blind
+(judge κ = 0.76 on 210 posts; hack-detector precision
+1.00 on 229 attempts; deviation #7). Read every claim below
+as evidence from this batch, not as a confirmatory result; the confirmatory test is
+[Experiment 02](02_confirmatory_batch1.md).
 
 1. **Seeding pro-hack posts did not raise hacking in the swarm.** Mean non-seed hack-attempt prevalence over rounds
    1–10: MAIN − PLACEBO = +0.1% (95% CI
@@ -176,9 +179,10 @@ per-capita rate a acting on a limited pool of M agents: new first hacks come at 
 of hack-prone agents, with no feedback from earlier hackers. The exponential is the worst family. The cumulative
 curve rises most between rounds 0 and 1 and decelerates afterwards. The preregistered r₀ comes from a Richards fit
 whose shape parameter sits at its lower bound (MAIN a = 0.05; a → 0 is the Gompertz limit). Its ln 2 / r₀ measures how fast the
-curve approaches its plateau after round 0; it is not the doubling time of a growing epidemic. The pilot
-identifiability check has not run (postponed), so per preregistration §9.4 these fits describe curve shape and are
-not evidence for one family.
+curve approaches its plateau after round 0; it is not the doubling time of a growing epidemic. The identifiability
+check, run afterwards at Stage 2, recovered the true family in 64% of simulated
+datasets, below the preregistered 80%, so per preregistration §9.4 these fits describe curve shape and are not
+evidence for one family.
 
 ### How agents hacked
 
@@ -238,12 +242,13 @@ backoff, as the OpenAI client already did for completions.
 
 ## Limitations of this batch
 
-- Exploratory: 8 replicates per condition (preregistered confirmatory batch: 20/20/15). The task filter comes from a
+- Exploratory: 8 replicates per condition (preregistered confirmatory batch:
+  20/20/15). The task filter comes from a
   partial capability pass (534 of 919 tasks). Calibration used 50 trials per cell. The pools hold 58 matched pairs,
-  checked mechanically plus one reading. Audits of the judge (κ) and of the hack detector have not run yet, so post
-  stance and hack labels are unvalidated. The judge does miss some pro-hack content: the post in the examples
+  checked mechanically plus one reading. The blinded audits ran after this batch (judge κ =
+  0.76, above the preregistered 0.61). The judge does miss some pro-hack content: the post in the examples
   above that adjusts its logic to return the impossible "Valid EmailX" output describes special-casing, yet it was
   labelled neutral. Such misses move pro-hack posts into the neutral count. The judge-free robustness exposure (posts
   by authors who hacked) does not depend on the judge, and it also gives a hazard ratio above 1.
-- One model (Qwen3.5-4B, 4-bit), one board design, one task family. The dose-response assay, which would predict the
-  swarm curve out of sample, has not run.
+- One model (Qwen3.5-4B, 4-bit), one board design, one task family. The dose-response assay and its out-of-sample
+  prediction of the swarm curve (H5) ran later, in [Experiment 02](02_confirmatory_batch1.md).
