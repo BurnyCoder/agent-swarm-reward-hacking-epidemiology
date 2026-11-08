@@ -200,8 +200,10 @@ def h2(df: pd.DataFrame, rng, n_perm: int = 1000, n_boot: int = 2000, h1_star: f
         b, se = float(rp.params["k_nonseed_pro"]), float(rp.bse["k_nonseed_pro"])
         betas.append(b)
         cover.append(b - 1.96 * se <= 0 <= b + 1.96 * se)
+    b_obs = out["k_nonseed_pro"]["beta"]  # randomization p: share of permuted betas >= observed (+1 smoothing)
     out["permutation_control"] = {"mean_beta": float(np.mean(betas)), "sd_beta": float(np.std(betas)),
-                                  "coverage_of_zero": float(np.mean(cover)), "n_perm": n_perm}
+                                  "coverage_of_zero": float(np.mean(cover)), "n_perm": n_perm,
+                                  "p_perm_one_sided": float((1 + np.sum(np.array(betas) >= b_obs)) / (1 + n_perm))}
     return out
 
 
