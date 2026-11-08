@@ -20,3 +20,6 @@ runs/
 logs/
 *.jsonl.gz
 trackio_data/
+
+# capability-pass checkpoint (resumable working file; the frozen snapshot is data/capability_snapshot.json)
+data/capability.partial.jsonl
