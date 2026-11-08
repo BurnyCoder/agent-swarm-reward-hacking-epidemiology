@@ -1,7 +1,8 @@
 """Static figures (PNG) for README/paper, generated only from results files written by `analysis.py`.
 
 Local context: matplotlib with the dataviz reference palette (categorical slots 1-3 validated all-pairs; colors follow
-the condition entity in every figure: MAIN blue, PLACEBO orange, TRANSIENT aqua). Proportions use a 0-1 y-axis,
+the condition entity in every figure: MAIN blue, PLACEBO orange, TRANSIENT aqua). Proportions keep 0 as the baseline;
+the top is 1 or, for rare outcomes, just above the largest per-run value so differences stay visible,
 uncertainty is always drawn (95% bootstrap bands over runs, Wilson intervals for assay cells), one y-axis per chart.
 Global context: `scripts/analyze.py` calls `make_all`; filenames are referenced from README and the paper.
 """
@@ -12,6 +13,7 @@ import json  # summary
 from pathlib import Path  # paths
 
 import matplotlib
+import matplotlib.ticker  # plain log-axis tick labels
 
 matplotlib.use("Agg")  # headless rendering
 import matplotlib.pyplot as plt  # plotting (imported after selecting the Agg backend)
@@ -41,6 +43,7 @@ def fig_prevalence(prev: pd.DataFrame, out: Path, col: str = "prevalence", fname
     band. Also draws the flag-rate curve (col="flag_rate") for the counter-contagion analysis."""
     rng = np.random.default_rng(0)
     fig, ax = plt.subplots(figsize=(7, 4))
+    top = 1.0 if prev[col].max() > 0.5 else max(0.2, 1.15 * prev[col].max())  # zero baseline kept; rare outcomes zoom
     for cond, g in prev.groupby("condition"):
         mat = g.pivot(index="run_id", columns="round", values=col).values  # runs x rounds
         x = np.arange(mat.shape[1])
@@ -49,7 +52,7 @@ def fig_prevalence(prev: pd.DataFrame, out: Path, col: str = "prevalence", fname
         lo, hi = _band(mat, rng)
         ax.fill_between(x, lo, hi, color=COLORS.get(cond, INK2), alpha=0.2, linewidth=0)
         ax.plot(x, mat.mean(0), color=COLORS.get(cond, INK2), label=f"{cond} (n={len(mat)} runs)")
-    ax.set(xlabel="Round (0 = warm-up, empty board)", ylabel=ylabel, ylim=(0, 1), title=title)
+    ax.set(xlabel="Round (0 = warm-up, empty board)", ylabel=ylabel, ylim=(0, top), title=title)
     ax.legend(frameon=False)
     fig.tight_layout()
     fig.savefig(out / fname)
@@ -96,6 +99,10 @@ def fig_hazard(summary: dict, out: Path) -> None:
     ax.axvline(1, color=INK2, linewidth=1)  # no-effect reference
     ax.set_yticks(range(len(rows)), [r[0] for r in rows])
     ax.set_xscale("log")
+    lo, hi = min(r["hr_low"] for _, r in rows), max(r["hr_high"] for _, r in rows)
+    ticks = [t for t in (0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12) if lo / 1.1 <= t <= hi * 1.1] or [1]
+    ax.set_xticks(ticks, [f"{t:g}" for t in ticks])  # plain labels instead of 2x10^0
+    ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
     ax.set(xlabel="Hazard ratio per pro-hack post read (log scale, 95% cluster-robust CI)",
            title="Per-post transmission hazard (randomized exposure; all conditions)")
     ax.invert_yaxis()
