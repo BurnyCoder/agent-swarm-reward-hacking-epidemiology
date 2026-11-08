@@ -294,7 +294,7 @@ Analysis-code corrections made before any confirmatory data are listed in `repor
 
 == Exploratory batch before Stage 2 <sec-res-explore>
 
-At the author's request for swarm results within 12 hours, an exploratory batch ran before the Stage 2 freeze (deviation \#13). Settings were otherwise preregistered: MAIN, PLACEBO and TRANSIENT × #num(X("n_runs", "MAIN")) runs, $N$ = #N, $K$ = #K, $T$ = #T, $m$ = #m, prompt variant #num(P("calibration", "chosen")). Its replicate streams are disjoint from the confirmatory ones, and its data are never pooled with them. Shortcuts were a task filter from a partial capability pass, 50-trial calibration cells and the first, smaller version of the pools (deviation \#14). The batch was analysed with the confirmatory analysis code after the corrections in deviation \#16. Its judge and detector labels are not yet audited, so every result in this subsection is exploratory.
+At the author's request for swarm results within 12 hours, an exploratory batch ran before the Stage 2 freeze (deviation \#13). Settings were otherwise preregistered: MAIN, PLACEBO and TRANSIENT × #num(X("n_runs", "MAIN")) runs, $N$ = #N, $K$ = #K, $T$ = #T, $m$ = #m, prompt variant #num(get("explore_calibration", "chosen")). Its replicate streams are disjoint from the confirmatory ones, and its data are never pooled with them. Shortcuts were a task filter from a partial capability pass, 50-trial calibration cells and the first, smaller version of the pools (deviation \#14). The batch was analysed with the confirmatory analysis code after the corrections in deviation \#16. Its judge and detector labels are not yet audited, so every result in this subsection is exploratory.
 
 #figure(
   btable((1.6fr, 1fr), ([Quantity], [Estimate [95% CI]]),

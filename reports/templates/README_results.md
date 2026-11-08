@@ -1,7 +1,7 @@
 **Exploratory batch (2026-11-08; not the preregistered confirmatory test, see
 [deviation #13](reports/deviations.md)):** MAIN {explore_summary[n_runs][MAIN]}, PLACEBO
 {explore_summary[n_runs][PLACEBO]}, TRANSIENT {explore_summary[n_runs][TRANSIENT]} swarms of 32 agents × 11 rounds,
-ImpossibleBench prompt {calibration[chosen]}. Full report:
+ImpossibleBench prompt {calibration_explore[chosen]}. Full report:
 [`reports/experiments/01_exploratory_swarm.md`](reports/experiments/01_exploratory_swarm.md).
 
 | Condition (seed posts) | non-seed hack-attempt prevalence, rounds 1–10 | difference vs PLACEBO [95% CI] | exact sign-flip p (one-sided) |

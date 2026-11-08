@@ -248,6 +248,7 @@ def collect(results: Path, data: Path) -> dict:
         "verdicts": verdicts(summary),
         "explore": read_json(results / "explore" / "summary.json"),  # exploratory batch (deviation #13), not pooled
         "explore_derived": {"prevalence": condition_prevalence(results / "explore", d["T"])},
+        "explore_calibration": read_json(data / "calibration_explore.json"),  # frozen calibration of that batch
         "engineering": engineering or None,
         "figures": sync_figures(results),
     })
