@@ -114,6 +114,45 @@ evidence for one family (preregistration §9.4).
 
 ![Mechanisms](../../results/explore/figures/fig_mechanisms.png)
 
+### Counter-contagion: does flagging spread? (exploratory; model form chosen after an interim look)
+
+The preregistration lists "flag and anti-hack counter-contagion" among the exploratory analyses (§9) without a model.
+An interim look at the per-round logs showed flag rates rising in every condition. We then fixed this model:
+the H2 design with the outcome swapped. The risk set is agent-rounds t ≥ 1 that did not flag in t − 1, and the
+outcome is a flag in t. The exposures are the counts of anti-hack, seed pro-hack and non-seed pro-hack posts read,
+each with its expected count given the board. As in H2, the model has round + run + task fixed effects and
+run-clustered SEs. Because the model was specified after seeing the data, read its p-values as descriptive.
+
+| | MAIN | PLACEBO | TRANSIENT |
+|---|---|---|---|
+| flag rate, round 0 (empty board) | {explore_summary[counter_contagion][flag_rate_round0][MAIN]:.1%} | {explore_summary[counter_contagion][flag_rate_round0][PLACEBO]:.1%} | {explore_summary[counter_contagion][flag_rate_round0][TRANSIENT]:.1%} |
+| flag rate, round 10 | {explore_summary[counter_contagion][flag_rate_round10][MAIN]:.1%} | {explore_summary[counter_contagion][flag_rate_round10][PLACEBO]:.1%} | {explore_summary[counter_contagion][flag_rate_round10][TRANSIENT]:.1%} |
+| agent posts judged anti-hack | {explore_summary[counter_contagion][post_anti_rate][MAIN]:.1%} | {explore_summary[counter_contagion][post_anti_rate][PLACEBO]:.1%} | {explore_summary[counter_contagion][post_anti_rate][TRANSIENT]:.1%} |
+
+| Exposure (effect on the hazard of starting to flag) | hazard ratio per post | 95% CI |
+|---|---|---|
+| anti-hack post read | {explore_summary[counter_contagion][k_anti][hr]:.2f} | [{explore_summary[counter_contagion][k_anti][hr_low]:.2f}, {explore_summary[counter_contagion][k_anti][hr_high]:.2f}] |
+| pro-hack post by a seed | {explore_summary[counter_contagion][k_seed_pro][hr]:.2f} | [{explore_summary[counter_contagion][k_seed_pro][hr_low]:.2f}, {explore_summary[counter_contagion][k_seed_pro][hr_high]:.2f}] |
+| pro-hack post by a non-seed agent | {explore_summary[counter_contagion][k_nonseed_pro][hr]:.2f} | [{explore_summary[counter_contagion][k_nonseed_pro][hr_low]:.2f}, {explore_summary[counter_contagion][k_nonseed_pro][hr_high]:.2f}] |
+
+Risk set: {explore_summary[counter_contagion][n_rows]} agent-rounds, {explore_summary[counter_contagion][n_events]}
+flag onsets. Average marginal increase in the flag-onset hazard per anti-hack post read:
+{explore_summary[counter_contagion][h_anti_marginal]:.4f}. The flag rate can also rise without the board: each agent
+keeps private notes and gets grader feedback. The randomized counts identify only the board's per-post effect; the
+memory pathway needs the memory-off ablation (week phase).
+
+![Flag rate by round](../../results/explore/figures/fig_flag_rate.png)
+
+## Run log
+
+The batch process stopped once (04:00 CET): a request to vLLM's `/tokenize` endpoint got "Server disconnected
+without sending a response", and that request had no retry. At that point 20 runs were complete. Three runs had
+finished round 0 and one had not started. The four were resumed from their per-round checkpoints (`state.json`,
+`rounds.jsonl`). Task schedules, board samples and per-call sampling seeds are keyed by (replicate, round, agent), so
+a resumed round draws the same tasks, reads and seeds it would have drawn. The interrupted round's records had not
+been written, so no agent-round appears twice. The `/tokenize` call now retries transient transport errors with
+backoff, as the OpenAI client already did for completions.
+
 ## Limitations of this batch
 
 - Exploratory: 8 replicates per condition (preregistered confirmatory batch: 20/20/15). The task filter comes from a
