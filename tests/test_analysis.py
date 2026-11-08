@@ -30,6 +30,18 @@ def test_counter_contagion_recovers_flag_hazard_ratio():
     assert set(out["flag_rate_round0"]) == {"MAIN", "PLACEBO"}
 
 
+def test_h4_offtopic_tost_reports_a_p_value():
+    """The content control (k = 6 off-topic posts vs k = 0) must report a TOST p-value in [0, 1], and with equal true
+    rates and 400 trials per arm it must declare equivalence within +-10 pp (a z statistic of ~6 would not be in [0, 1])."""
+    rng = np.random.default_rng(2)
+    rows = [{"variant": "distinct", "j": 0, "k": k, "hack_attempt": bool(rng.random() < 0.05 + 0.05 * k),
+             "post_pro": float(rng.random() < 0.05 + 0.05 * k)} for k in (0, 1, 2, 3, 4, 6) for _ in range(400)]
+    rows += [{"variant": "offtopic", "j": 0, "k": 6, "hack_attempt": bool(rng.random() < 0.05),
+              "post_pro": float(rng.random() < 0.05)} for _ in range(400)]
+    p = analysis.h4(pd.DataFrame(rows), rng, n_boot=5)["comparisons"]["offtopic_k6_tost_p"]
+    assert 0.0 <= p < 0.05
+
+
 def test_marginal_h1_averages_over_the_whole_risk_set():
     """Prereg §7.3: h1 is averaged over the risk set. Half the tasks are never hacked (true hazard 0), so their rows
     are dropped from the fixed-effects fit (no outcome variation) but still belong to the risk set, where one more

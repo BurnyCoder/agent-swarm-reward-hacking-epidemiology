@@ -74,7 +74,8 @@ def _weibull(th):
 
 def _sigmoid(th):
     rl, rh, w, k0 = expit(th[0]), expit(th[1]), np.exp(th[2]), th[3]  # floor, ceiling, steepness, threshold
-    return (lambda k: rl + (rh - rl) / (1 + np.exp(-w * (k - k0)))), {"rl": rl, "rh": rh, "w": w, "k0": k0}
+    # expit(x) = 1/(1+exp(-x)) computed without overflow for large |x| (scipy.special.expit docs); same values
+    return (lambda k: rl + (rh - rl) * expit(w * (k - k0))), {"rl": rl, "rh": rh, "w": w, "k0": k0}
 
 
 def curve(name: str, p: dict, k) -> np.ndarray:

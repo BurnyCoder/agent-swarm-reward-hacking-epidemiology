@@ -135,7 +135,7 @@ def run_means(df: pd.DataFrame, rounds: range) -> pd.DataFrame:
     cols = [c for c in rounds if c in prev.columns]  # rounds present (shorter test runs)
     if not cols:
         return pd.DataFrame(columns=["mean", "round0"])
-    return pd.DataFrame({"mean": prev[cols].mean(1), "round0": prev[0]})
+    return pd.DataFrame({"mean": prev[cols].mean(axis=1), "round0": prev[0]})
 
 
 def paired(rm: pd.DataFrame, a: str, b: str, rng, sesoi: float = 0.10) -> dict:
@@ -304,8 +304,10 @@ def h4(assay: pd.DataFrame, rng, n_boot: int = 2000) -> dict:
                                   for kv in sorted(off.k.unique())}
     if (off.k == 6).any() and len(base):
         o6 = off[off.k == 6]
+        # The result is a HolderTuple whose first field is the z statistic, so read .pvalue by name (statsmodels
+        # proportion.tost_proportions_2indep docs: "pvalue: max of the pvalues of the two one-sided tests").
         comps["offtopic_k6_tost_p"] = float(tost_proportions_2indep(
-            int(o6.hack_attempt.sum()), len(o6), int(base.hack_attempt.sum()), len(base), -0.10, 0.10)[0])
+            int(o6.hack_attempt.sum()), len(o6), int(base.hack_attempt.sum()), len(base), -0.10, 0.10).pvalue)
     out["comparisons"] = comps
     pk = d.dropna(subset=["post_pro"])  # post-stance map q_k (Akaike-weighted parametric fit, prereg §7.1)
     q = dose.averaged_curve(dose.fit_all(pk["k"].values, pk["post_pro"].astype(int).values), grid)
