@@ -22,6 +22,7 @@ import argparse  # CLI
 import asyncio  # event loop
 import json  # data files
 import logging  # progress
+from collections import Counter  # posts per author (assay same-author arm)
 from dataclasses import replace  # config overrides
 from pathlib import Path  # paths
 
@@ -111,7 +112,11 @@ async def main(args: argparse.Namespace) -> None:
     elif args.phase == "assay":
         ap = read_json("assay_pools.json")  # pro / anti / neutral pools + snapshots
         cells = [(k, 0, "distinct") for k in (0, 1, 2, 3, 4, 6)] + [(k, 2, "distinct") for k in (0, 1, 2, 3, 4)]
-        cells += [(k, 0, "same") for k in (2, 4)] + [(k, 0, "offtopic") for k in (2, 4, 6)]  # prereg §2.3
+        most = max(Counter(it.get("author", it["pool_id"]) for it in ap["pro"]).values())  # posts by the top author
+        same = [k for k in (2, 4) if k <= most]  # same-author cells need one author with >= k pro-hack posts
+        if len(same) < 2:  # deviation #18: an infeasible cell is dropped, never filled with sub-threshold posts
+            log.warning("same-author arm: dropped k=%s (top author has %d pro-hack posts)", [k for k in (2, 4) if k > most], most)
+        cells += [(k, 0, "same") for k in same] + [(k, 0, "offtopic") for k in (2, 4, 6)]  # prereg §2.3
         trials = make_trials(cells, args.n or 150, ap, [tuple(s) for s in ap["snapshots"]], len(tasks), 6, seed=7)
         (runs / "assay").mkdir(parents=True, exist_ok=True)
         await run_trials(trials, llm, sandbox, SwarmConfig(condition="ASSAY", prompt_variant=variant), tasks,
