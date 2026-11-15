@@ -1,11 +1,12 @@
-"""Interactive results explorer: one self-contained static HTML page (Plotly) for a private Hugging Face static Space.
+"""Interactive results explorer: one self-contained static HTML page (Plotly) for GitHub Pages and a Hugging Face Space.
 
 Local context: reads only analysis outputs (`results/summary.json`, `results/prevalence_by_round.csv`,
 `results/agent_rounds.parquet`). Panels: prevalence curves (every run hoverable), dose-response cells, hazard ratios,
 out-of-sample prediction envelopes, a per-run transmission explorer (agents x rounds, red = hack attempt, edges from
 authors of pro-hack posts an agent read to that agent when it started hacking) and example posts/code per outcome.
 Colors follow the condition entity as in `figures.py` (validated palette). Tables back every chart (accessibility).
-Global context: `scripts/build_site.py` writes `site/index.html`; `hf upload --repo-type space` deploys it privately.
+Global context: `scripts/analyze.py` writes `site/index.html`; `.github/workflows/pages.yml` deploys it to GitHub Pages
+on push and `scripts/publish_hf.py` uploads it to the public static Space.
 """
 
 from __future__ import annotations  # forward references

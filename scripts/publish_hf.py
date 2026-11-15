@@ -1,15 +1,17 @@
-"""Publish results to Hugging Face, all PRIVATE: a dataset (results, pilot data, reports, paper, optionally raw logs),
+"""Publish results to Hugging Face, all PUBLIC: a dataset (results, pilot data, reports, paper, optionally raw logs),
 a static Space (the interactive site), and one collection holding both.
 
 Usage:
-  uv run python scripts/publish_hf.py --create-only      # create/verify the private repos and the collection
+  uv run python scripts/publish_hf.py --create-only      # create the public repos and collection (or make them public)
   uv run python scripts/publish_hf.py [--raw RUNS_DIR]   # upload everything (raw runs/logs only if --raw is given)
 Local context: huggingface_hub 2.x `HfApi` (https://huggingface.co/docs/huggingface_hub/package_reference/hf_api):
-`create_repo(repo_id, private=True, repo_type=..., space_sdk="static", exist_ok=True)`, `upload_folder(...)`,
-`create_collection(title, private=True, exists_ok=True)`, `add_collection_item(slug, item_id, item_type, exists_ok=True)`.
-After creation the script re-reads `repo_info(...).private` and refuses to upload to anything that is not private
-(user requirement: repo and HF files private). The token comes from the local `hf auth login`; it is never printed.
-`.env`, caches and virtualenvs are excluded from every upload.
+`create_repo(repo_id, private=False, repo_type=..., space_sdk="static", exist_ok=True)`, `upload_folder(...)`,
+`create_collection(title, private=False, exists_ok=True)`, `add_collection_item(slug, item_id, item_type, exists_ok=True)`.
+`create_repo`/`create_collection` with `exist_ok` return an existing item unchanged, so a repo or collection created
+private earlier is switched with `update_repo_settings(repo_id, private=False, repo_type=...)` and
+`update_collection_metadata(slug, private=False)`, then re-read; the script stops if anything is still private
+(user decision 2026-11-15: the GitHub repo is public, so the data, site and collection are public too). The token
+comes from the local `hf auth login`; it is never printed. `.env`, caches and virtualenvs are excluded from every upload.
 Global context: run after `scripts/analyze.py`, `scripts/make_reports.py` and `scripts/make_paper.py`.
 """
 
@@ -33,8 +35,10 @@ tags: [reward-hacking, multi-agent, contagion, epidemiology, impossiblebench]
 ---
 # Reward-hacking epidemics in a local LLM agent swarm — data
 
-Results, pilot files, reports and the paper for the project of the same name (private GitHub repo
-`BurnyCoder/{NAME}`). Layout: `results/` (analysis outputs: `summary.json`, tables, figures), `data/` (frozen
+Results, pilot files, reports and the paper for the project of the same name. Code:
+[github.com/BurnyCoder/{NAME}](https://github.com/BurnyCoder/{NAME}); interactive results explorer:
+[GitHub Pages](https://burnycoder.github.io/{NAME}/) and the
+[Hugging Face Space](https://huggingface.co/spaces/BurnyCoder/{NAME}). Layout: `results/` (analysis outputs: `summary.json`, tables, figures), `data/` (frozen
 pilot files: capability filter, pools, calibration, audits), `reports/` (preregistration, deviations, experiment
 reports), `paper/` (PDF), and, when uploaded, `raw/` (per-run `rounds.jsonl`/`board.jsonl` and complete LLM call logs).
 Task data derive from `AlignmentResearch/mbpp-honeypot-impossible-oneoff` (CC-BY-4.0); seed beliefs adapt
@@ -46,15 +50,18 @@ sdk: static
 app_file: index.html
 pinned: false
 ---
-Interactive results explorer for the reward-hacking contagion experiments (private).
+Interactive results explorer for the reward-hacking contagion experiments.
+Code, data and paper: https://github.com/BurnyCoder/agent-swarm-reward-hacking-epidemiology
 """
 
 
-def ensure_private(api: HfApi, repo_id: str, repo_type: str, **kw) -> str:
-    """Create the repo as private if missing, then verify it is private; returns its URL."""
-    url = api.create_repo(repo_id, private=True, repo_type=repo_type, exist_ok=True, **kw)  # no-op if it exists
-    if not api.repo_info(repo_id, repo_type=repo_type).private:  # never upload to a public repo
-        raise SystemExit(f"{repo_type} {repo_id} is not private; refusing to continue")
+def ensure_public(api: HfApi, repo_id: str, repo_type: str, **kw) -> str:
+    """Create the repo as public if missing, switch it to public if it exists as private, verify; returns its URL."""
+    url = api.create_repo(repo_id, private=False, repo_type=repo_type, exist_ok=True, **kw)  # no-op if it exists
+    if api.repo_info(repo_id, repo_type=repo_type).private:  # created private earlier: flip the visibility
+        api.update_repo_settings(repo_id, private=False, repo_type=repo_type)  # huggingface_hub >= 0.25 API
+    if api.repo_info(repo_id, repo_type=repo_type).private:  # re-read: the flip must have taken effect
+        raise SystemExit(f"{repo_type} {repo_id} is still private; refusing to continue")
     return str(url)
 
 
@@ -66,12 +73,14 @@ def main() -> None:
     api = HfApi()
     user = api.whoami()["name"]  # e.g. BurnyCoder
     ds, sp = f"{user}/{NAME}", f"{user}/{NAME}"
-    print("dataset:", ensure_private(api, ds, "dataset"))
-    print("space:  ", ensure_private(api, sp, "space", space_sdk="static"))
-    coll = api.create_collection(TITLE, private=True, exists_ok=True,
+    print("dataset:", ensure_public(api, ds, "dataset"))
+    print("space:  ", ensure_public(api, sp, "space", space_sdk="static"))
+    coll = api.create_collection(TITLE, private=False, exists_ok=True,  # returns the existing one unchanged
                                  description="Data, results explorer and paper for the swarm contagion study.")
-    if not coll.private:  # the collection must be private too
-        raise SystemExit(f"collection {coll.slug} is not private")
+    if coll.private:  # created private earlier: flip it (returns the updated Collection)
+        coll = api.update_collection_metadata(coll.slug, private=False)
+    if coll.private:  # the collection must be public too
+        raise SystemExit(f"collection {coll.slug} is still private")
     for item, kind in ((ds, "dataset"), (sp, "space")):
         api.add_collection_item(coll.slug, item, kind, exists_ok=True)  # one collection for this research
     print("collection:", coll.url)
