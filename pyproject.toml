@@ -3,6 +3,8 @@ name = "swarm-epi"
 version = "0.1.0"
 description = "Epidemiology of a reward-hacking belief spreading through a swarm of local-LLM agents sharing a message board"
 readme = "README.md"
+license = "MIT"  # SPDX expression (PEP 639); data/results/reports/paper are CC-BY-4.0, see LICENSE-DATA
+license-files = ["LICENSE", "LICENSE-DATA"]
 authors = [
     { name = "BurnyCoder", email = "happymancz@email.cz" }
 ]

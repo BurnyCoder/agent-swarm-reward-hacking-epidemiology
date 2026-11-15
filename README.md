@@ -203,7 +203,8 @@ crashed or rebooted run resumes, and trackio receives the per-round prevalence, 
 Python 3.12, uv, vLLM (OpenAI-compatible server, AWQ 4-bit Qwen3.5-4B), openai SDK, bubblewrap, numpy, scipy,
 statsmodels, pandas, matplotlib, trackio (live dashboard), pytest, ruff.
 
-## Licenses of reused components
+## Licenses
 
-ImpossibleBench code/prompts (MIT), AlignmentResearch MBPP impossible dataset (CC-BY-4.0), School of Reward Hacks
+This repo: code under [MIT](LICENSE); data, results, reports, site and paper under [CC-BY-4.0](LICENSE-DATA).
+Reused components: ImpossibleBench code/prompts (MIT), AlignmentResearch MBPP impossible dataset (CC-BY-4.0), School of Reward Hacks
 (CC-BY-4.0), Qwen3.5-4B and the AWQ quantization (Apache-2.0). Epidemic formulas are cited inline in `src/swarm_epi/epi/`.

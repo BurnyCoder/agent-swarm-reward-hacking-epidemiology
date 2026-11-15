@@ -1,0 +1,17 @@
+Data, results, reports and paper: Creative Commons Attribution 4.0 International (CC-BY-4.0)
+
+Copyright (c) 2026 Libor Burian
+
+The contents of data/, results/, reports/, paper/ and site/ in this repository, and of the
+Hugging Face dataset BurnyCoder/agent-swarm-reward-hacking-epidemiology
+(https://huggingface.co/datasets/BurnyCoder/agent-swarm-reward-hacking-epidemiology),
+are licensed under CC-BY-4.0. Full legal code:
+https://creativecommons.org/licenses/by/4.0/legalcode
+
+They derive from two upstream datasets, both CC-BY-4.0:
+- AlignmentResearch/mbpp-honeypot-impossible-oneoff
+  (https://huggingface.co/datasets/AlignmentResearch/mbpp-honeypot-impossible-oneoff): the coding tasks.
+- longtermrisk/school-of-reward-hacks
+  (https://huggingface.co/datasets/longtermrisk/school-of-reward-hacks): adapted for the seed beliefs.
+
+Source code is licensed under the MIT License; see LICENSE.
