@@ -1,0 +1,41 @@
+# Deploy the interactive results explorer (site/index.html, written by scripts/analyze.py) to GitHub Pages.
+# Local context: GitHub's starter workflow for static content (actions/starter-workflows, pages/static.yml),
+# unchanged except that only site/ is uploaded and the action majors are the latest releases (checked 2026-11-15).
+# Global context: the same page is also uploaded to the Hugging Face Space by scripts/publish_hf.py.
+name: Deploy results site to Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]  # redeploy only when the site or this workflow changes
+  workflow_dispatch:  # manual run from the Actions tab or `gh workflow run pages.yml`
+
+# GITHUB_TOKEN permissions needed for a Pages deployment (starter workflow)
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; do not cancel a deployment in progress (starter workflow)
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site  # single page (data inline, Plotly from cdn.plot.ly), so the folder is the whole site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
