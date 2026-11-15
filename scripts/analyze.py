@@ -31,4 +31,4 @@ if __name__ == "__main__":
                                args.results / "post_labels.json", args.results)
     print(json.dumps({k: summary.get(k) for k in ("n_runs", "holm")}, indent=1, default=float))  # headline only
     print("figures:", figures.make_all(args.results))
-    print("site:", site.build(args.results, Path("site")))  # private HF Space page
+    print("site:", site.build(args.results, Path("site")))  # page for GitHub Pages and the HF Space

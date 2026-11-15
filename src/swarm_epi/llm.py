@@ -7,7 +7,7 @@ Qwen3.5-4B model card shows. Log-probabilities use the standard `logprobs=True, 
 Every call is appended in full (all messages + output + usage + timing) to a timestamped JSONL file and echoed to the
 terminal without truncation (user requirement).
 Global context: `agent.py` and `pools.py` call `chat` / `option_probs`; the JSONL file is the raw data uploaded to the
-private HF dataset.
+public HF dataset (`scripts/publish_hf.py --raw`).
 """
 
 from __future__ import annotations  # forward references
